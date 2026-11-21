@@ -8,7 +8,9 @@ personal working style and writing standards; they are not part of this repo.)
 
 An open-source iOS/iPadOS email client that looks like Messages but keeps real
 email semantics: a thread is a conversation, the subject is its title, and
-messages render as chat bubbles. The roadmap is kept outside this repository,
+messages render as chat bubbles. `CONVERSATIONS.md` defines what a conversation
+is for this app and for zirbe-desktop; read it before changing threading or
+reactions, and change it with them. The roadmap is kept outside this repository,
 and git history is the changelog. Don't restate shipped work here.
 
 ## Tech stack
