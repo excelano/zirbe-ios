@@ -85,6 +85,8 @@ struct ConversationView: View {
     /// A message to scroll to (a tapped search result); consumed and cleared by
     /// the chat's scroll reader.
     @State private var scrollTarget: String?
+    @State private var heldPosition: StackPosition?
+    @State private var holdsPosition = true
     /// A message to briefly emphasize after a jump, so the eye finds where it
     /// landed; cleared on its own after a moment.
     @State private var flashedMessage: String?
@@ -263,11 +265,13 @@ struct ConversationView: View {
             if let cached, !mayOpenInWebView {
                 isFetchingBodies = true
                 setThread(cached)
+                heldPosition = MessageStack.openingPosition(of: stack)
                 isLoading = false
             }
             let loaded = await model.conversation(id: summary.id) ?? cached
             if mayOpenInWebView, let loaded { await prepareInitialWebView(loaded) }
             setThread(loaded)
+            if heldPosition == nil { heldPosition = MessageStack.openingPosition(of: stack) }
             isFetchingBodies = false
             isLoading = false
             if let loaded {
@@ -288,6 +292,7 @@ struct ConversationView: View {
     /// Close the find panel and jump the chat to the tapped message, flashing it
     /// briefly so the eye finds where it landed.
     private func jump(to messageID: String) {
+        holdsPosition = false
         isSearching = false
         flashedMessage = messageID
         scrollTarget = messageID
@@ -351,46 +356,48 @@ struct ConversationView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(stack) { row in
-                        if let dayDate = row.daySeparator {
-                            DaySeparatorView(date: dayDate)
-                                .padding(.vertical, 4)
-                                .modifier(PeekShift(peek: peek))
-                        }
-                        if let delta = participantDeltas[row.id] {
-                            ParticipantChangeLine(delta: delta)
-                                .padding(.vertical, 8)
-                                .modifier(PeekShift(peek: peek))
-                        }
-                        let rowReactions = reactionsByTarget[row.message.messageID ?? ""] ?? []
-                        MessageBubble(
-                            model: model,
-                            message: row.message,
-                            folded: row.folded,
-                            isAwaitingBody: isFetchingBodies && row.message.bodyText == nil,
-                            isOwn: row.isOwn,
-                            hasTail: row.hasTail,
-                            showSender: row.showSender,
-                            reactions: rowReactions,
-                            pendingEmoji: reactions.pendingEmoji(for: row.message.messageID),
-                            lockedEmoji: rowReactions.emoji(sentBy: model.account),
-                            selfAddress: model.account.emailAddress,
-                            isFlashed: flashedMessage == row.id,
-                            peek: peek,
-                            onReact: { emoji in react(emoji, to: row.message, in: thread) },
-                            onUndoReaction: { row.message.messageID.map { reactions.undo($0) } },
-                            onReply: { beginReply(to: row.message) },
-                            onShowWeb: { body, showImages in
-                                activeWeb = ActiveWeb(messageID: row.id, body: body, showImages: showImages)
-                            },
-                            onForward: { forwardingMessage = row.message },
-                            onRetry: { await retry(row.message, into: thread) }
-                        )
-                        .padding(.top, row.needsRunSpacing ? 8 : 0)
-                        if let responses = inviteResponses[row.id] {
-                            ForEach(responses) { response in
-                                InviteResponseLine(response: response)
-                                    .padding(.top, 6)
+                        VStack(spacing: 2) {
+                            if let dayDate = row.daySeparator {
+                                DaySeparatorView(date: dayDate)
+                                    .padding(.vertical, 4)
                                     .modifier(PeekShift(peek: peek))
+                            }
+                            if let delta = participantDeltas[row.id] {
+                                ParticipantChangeLine(delta: delta)
+                                    .padding(.vertical, 8)
+                                    .modifier(PeekShift(peek: peek))
+                            }
+                            let rowReactions = reactionsByTarget[row.message.messageID ?? ""] ?? []
+                            MessageBubble(
+                                model: model,
+                                message: row.message,
+                                folded: row.folded,
+                                isAwaitingBody: isFetchingBodies && row.message.bodyText == nil,
+                                isOwn: row.isOwn,
+                                hasTail: row.hasTail,
+                                showSender: row.showSender,
+                                reactions: rowReactions,
+                                pendingEmoji: reactions.pendingEmoji(for: row.message.messageID),
+                                lockedEmoji: rowReactions.emoji(sentBy: model.account),
+                                selfAddress: model.account.emailAddress,
+                                isFlashed: flashedMessage == row.id,
+                                peek: peek,
+                                onReact: { emoji in react(emoji, to: row.message, in: thread) },
+                                onUndoReaction: { row.message.messageID.map { reactions.undo($0) } },
+                                onReply: { beginReply(to: row.message) },
+                                onShowWeb: { body, showImages in
+                                    activeWeb = ActiveWeb(messageID: row.id, body: body, showImages: showImages)
+                                },
+                                onForward: { forwardingMessage = row.message },
+                                onRetry: { await retry(row.message, into: thread) }
+                            )
+                            .padding(.top, row.needsRunSpacing ? 8 : 0)
+                            if let responses = inviteResponses[row.id] {
+                                ForEach(responses) { response in
+                                    InviteResponseLine(response: response)
+                                        .padding(.top, 6)
+                                        .modifier(PeekShift(peek: peek))
+                                }
                             }
                         }
                     }
@@ -398,6 +405,15 @@ struct ConversationView: View {
                 .padding()
                 // Room for a reaction badge overhanging the newest bubble's top edge.
                 .padding(.top, 6)
+            }
+            .onChange(of: heldPosition, initial: true) { _, position in
+                scroll(proxy, to: position)
+            }
+            .onScrollGeometryChange(for: CGFloat.self, of: \.contentSize.height) { _, _ in
+                if holdsPosition { scroll(proxy, to: heldPosition) }
+            }
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { holdsPosition = false }
             }
             // A tapped search result scrolls its bubble to center; the flash it set
             // fades on its own shortly after.
@@ -415,6 +431,14 @@ struct ConversationView: View {
                 }
             }
             .simultaneousGesture(peekGesture)
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to position: StackPosition?) {
+        switch position {
+        case .top(let id): proxy.scrollTo(id, anchor: .top)
+        case .bottom(let id): proxy.scrollTo(id, anchor: .bottom)
+        case nil: break
         }
     }
 
@@ -451,6 +475,7 @@ struct ConversationView: View {
     private func commitReaction(_ emoji: String, to messageID: String) async {
         guard let thread else { return }
         if let refreshed = await model.sendReaction(emoji, to: messageID, in: thread) {
+            holdsPosition = false
             setThread(refreshed)
         }
     }
@@ -582,6 +607,8 @@ struct ConversationView: View {
             isSending = false
             if let updated {
                 setThread(updated)
+                heldPosition = stack.last.map { .bottom($0.id) }
+                holdsPosition = true
                 activeWeb = nil
             } else {
                 draft.composer.restore(taken)
@@ -610,6 +637,7 @@ struct ConversationView: View {
     private func retry(_ message: Message, into thread: ZirbeCore.Thread) async {
         guard let messageID = message.messageID else { return }
         if let updated = await model.retrySend(messageID: messageID, in: thread.id) {
+            holdsPosition = false
             setThread(updated)
         }
     }

@@ -17,13 +17,13 @@ final class MessageStackTests: XCTestCase {
         Date(timeIntervalSince1970: TimeInterval(n * 86_400 + hour * 3_600))
     }
 
-    private func msg(_ id: String, from: String, at date: Date?) -> Message {
+    private func msg(_ id: String, from: String, at date: Date?, seen: Bool = true) -> Message {
         Message(
             messageID: "<\(id)@x>",
             subject: "Lunch",
             from: Participant(address: from),
             date: date,
-            flags: [.seen]
+            flags: seen ? [.seen] : []
         )
     }
 
@@ -93,6 +93,24 @@ final class MessageStackTests: XCTestCase {
 
     func testAnEmptyConversationLaysOutEmpty() {
         XCTAssertTrue(rows([]).isEmpty)
+    }
+
+    func testAConversationOpensOnItsOldestUnreadMessage() {
+        let stacked = rows([
+            msg("a", from: "p@x.com", at: day(1, hour: 9)),
+            msg("b", from: "p@x.com", at: day(1, hour: 10), seen: false),
+            msg("c", from: "q@x.com", at: day(1, hour: 11), seen: false),
+        ])
+        XCTAssertEqual(MessageStack.openingPosition(of: stacked), .top(stacked[1].id))
+    }
+
+    func testAConversationWithNothingUnreadOpensOnItsNewestMessage() {
+        let stacked = rows([
+            msg("a", from: "p@x.com", at: day(1, hour: 9)),
+            msg("b", from: me, at: day(1, hour: 10), seen: false),
+        ])
+        XCTAssertEqual(MessageStack.openingPosition(of: stacked), .bottom(stacked[1].id))
+        XCTAssertNil(MessageStack.openingPosition(of: []))
     }
 
     /// Identity is the message's, so SwiftUI keeps bubbles stable across a reload.

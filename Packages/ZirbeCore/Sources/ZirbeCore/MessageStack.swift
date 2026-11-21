@@ -34,7 +34,19 @@ public struct StackedMessage: Identifiable, Sendable {
     public var id: String { message.id }
 }
 
+public enum StackPosition: Equatable, Sendable {
+    case top(String)
+    case bottom(String)
+}
+
 public enum MessageStack {
+    public static func openingPosition(of rows: [StackedMessage]) -> StackPosition? {
+        if let unread = rows.first(where: { !$0.isOwn && !$0.message.isSeen }) {
+            return .top(unread.id)
+        }
+        return rows.last.map { .bottom($0.id) }
+    }
+
     /// Lay out a conversation's messages, oldest first, as the view will show them.
     ///
     /// A run is a stretch of consecutive messages from one address. The first
