@@ -43,13 +43,11 @@ struct OnboardingView: View {
 
     private var oauthProvider: OAuthProvider? {
         guard !usesAppPassword, let id = ProviderPresets.oauthProvider(forIMAPHost: imapHost) else { return nil }
-        let provider = OAuthProvider.provider(for: id)
-        return provider.isConfigured ? provider : nil
+        return OAuthProvider.provider(for: id)
     }
 
-    private var hostedProviders: [OAuthProvider] {
-        guard preset == nil, ProviderPresets.oauthProvider(forIMAPHost: imapHost) == nil else { return [] }
-        return [OAuthProvider.microsoft, .google].filter(\.isConfigured)
+    private var offersHostedSignIn: Bool {
+        preset == nil && ProviderPresets.oauthProvider(forIMAPHost: imapHost) == nil
     }
 
     var body: some View {
@@ -65,7 +63,7 @@ struct OnboardingView: View {
                             .font(.footnote)
                     } else {
                         passwordField
-                        if !hostedProviders.isEmpty { hostedSignIn }
+                        if offersHostedSignIn { hostedSignIn }
                     }
                     serverSettings
                 }
@@ -169,24 +167,23 @@ struct OnboardingView: View {
 
     private var hostedSignIn: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Email hosted by Microsoft 365 or Google Workspace?")
+            Text("Email hosted by Microsoft 365?")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            ForEach(hostedProviders, id: \.id) { provider in
-                Button {
-                    let servers = ProviderPresets.servers(for: provider.id)
-                    imapHost = servers.imapHost
-                    imapPort = String(servers.imapPort)
-                    smtpHost = servers.smtpHost
-                    smtpPort = String(servers.smtpPort)
-                    signIn(with: provider)
-                } label: {
-                    Text("Sign in with \(provider.displayName)")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .font(.subheadline)
+            Button {
+                let provider = OAuthProvider.microsoft
+                let servers = ProviderPresets.servers(for: provider.id)
+                imapHost = servers.imapHost
+                imapPort = String(servers.imapPort)
+                smtpHost = servers.smtpHost
+                smtpPort = String(servers.smtpPort)
+                signIn(with: provider)
+            } label: {
+                Text("Sign in with \(OAuthProvider.microsoft.displayName)")
+                    .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.bordered)
+            .font(.subheadline)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .disabled(isConnecting)

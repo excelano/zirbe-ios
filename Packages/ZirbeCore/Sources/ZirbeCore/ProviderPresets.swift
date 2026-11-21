@@ -74,7 +74,6 @@ public enum ProviderPresets {
     public static func oauthProvider(forIMAPHost host: String) -> OAuthProvider.ID? {
         switch host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case outlook.imapHost: .microsoft
-        case gmail.imapHost: .google
         default: nil
         }
     }
@@ -82,7 +81,6 @@ public enum ProviderPresets {
     public static func servers(for provider: OAuthProvider.ID) -> ProviderPreset {
         switch provider {
         case .microsoft: outlook
-        case .google: gmail
         }
     }
 

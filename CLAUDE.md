@@ -40,8 +40,8 @@ boundary rule below.
 ## Privacy posture (non-negotiable)
 
 No backend, no third-party SDK, no telemetry. The only network destinations are
-the user's own IMAP and SMTP servers and, for a Microsoft or Google account, that
-provider's OAuth endpoints (`OAuth.swift`, our own code, no vendor SDK). The one
+the user's own IMAP and SMTP servers and, for a Microsoft account, Microsoft's
+OAuth endpoints (`OAuth.swift`, our own code, no vendor SDK). The one
 other download is Apple's on-device speech model, which iOS fetches from Apple
 for transcription (`Transcriber.swift`).
 Credentials and tokens are device-bound in the Keychain and never iCloud-synced.

@@ -62,9 +62,7 @@ final class OAuthTests: XCTestCase {
         XCTAssertTrue(query["scope"]?.contains("offline_access") == true)
     }
 
-    func testGoogleRedirectIsTheReversedClientID() {
-        XCTAssertEqual(OAuthProvider.googleRedirectURI(clientID: "123-abc.apps.googleusercontent.com"),
-                       "com.googleusercontent.apps.123-abc:/oauth2redirect")
+    func testTheCallbackSchemeIsTheRedirectScheme() {
         XCTAssertEqual(OAuthProvider.microsoft.callbackScheme, "msauth.com.excelano.zirbe")
     }
 
@@ -105,11 +103,11 @@ final class OAuthTests: XCTestCase {
     func testARefreshWithoutANewRefreshTokenKeepsTheOldOne() async throws {
         let http = FakeOAuthHTTP([(200, #"{"access_token":"a2","expires_in":3600}"#)])
 
-        let fresh = try await client(http).refresh(tokens(expiringIn: 0, provider: .google))
+        let fresh = try await client(http).refresh(tokens(expiringIn: 0))
 
         XCTAssertEqual(fresh.accessToken, "a2")
         XCTAssertEqual(fresh.refreshToken, "old-refresh")
-        XCTAssertNil(http.posts.first?.form["scope"], "Google refreshes without a scope")
+        XCTAssertTrue(http.posts.first?.form["scope"]?.contains("offline_access") == true)
     }
 
     func testARevokedRefreshTokenReadsAsARejectedSignIn() async {

@@ -7,7 +7,7 @@ import ZirbeMail
 
 public struct OAuthProvider: Sendable, Hashable {
     public enum ID: String, Sendable, Hashable, Codable {
-        case microsoft, google
+        case microsoft
     }
 
     public let id: ID
@@ -17,18 +17,14 @@ public struct OAuthProvider: Sendable, Hashable {
     public let clientID: String
     public let redirectURI: String
     let scopes: [String]
-    let refreshSendsScope: Bool
 
     public var callbackScheme: String {
         String(redirectURI.prefix { $0 != ":" })
     }
 
-    public var isConfigured: Bool { !clientID.isEmpty }
-
     public static func provider(for id: ID) -> OAuthProvider {
         switch id {
         case .microsoft: .microsoft
-        case .google: .google
         }
     }
 
@@ -43,30 +39,12 @@ public struct OAuthProvider: Sendable, Hashable {
             "https://outlook.office.com/IMAP.AccessAsUser.All",
             "https://outlook.office.com/SMTP.Send",
             "offline_access",
-        ],
-        refreshSendsScope: true
+        ]
     )
-
-    public static let google = OAuthProvider(
-        id: .google,
-        displayName: "Google",
-        authorizationEndpoint: URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!,
-        tokenEndpoint: URL(string: "https://oauth2.googleapis.com/token")!,
-        clientID: OAuthClientIDs.google,
-        redirectURI: googleRedirectURI(clientID: OAuthClientIDs.google),
-        scopes: ["https://mail.google.com/"],
-        refreshSendsScope: false
-    )
-
-    static func googleRedirectURI(clientID: String) -> String {
-        let reversed = clientID.split(separator: ".").reversed().joined(separator: ".")
-        return "\(reversed):/oauth2redirect"
-    }
 }
 
 enum OAuthClientIDs {
     static let microsoft = "1e5b498b-2c00-4466-9028-b3841124ed78"
-    static let google = ""
 }
 
 public struct OAuthTokens: Sendable, Hashable, Codable {
@@ -201,12 +179,12 @@ public struct OAuthClient: Sendable {
 
     public func refresh(_ tokens: OAuthTokens) async throws -> OAuthTokens {
         let provider = OAuthProvider.provider(for: tokens.provider)
-        var form = [
+        let form = [
             "grant_type": "refresh_token",
             "refresh_token": tokens.refreshToken,
             "client_id": provider.clientID,
+            "scope": provider.scopes.joined(separator: " "),
         ]
-        if provider.refreshSendsScope { form["scope"] = provider.scopes.joined(separator: " ") }
         let response: TokenResponse
         do {
             response = try await post(provider, form: form)
