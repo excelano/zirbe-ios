@@ -417,6 +417,17 @@ public actor MailEngine {
         }
     }
 
+    /// Set the `\Answered` flag on messages, over the warm session, so other
+    /// mail programs show a message Zirbe replied to as answered.
+    public func setAnswered(in mailbox: String, uids: [UInt32]) async throws {
+        guard !uids.isEmpty else { return }
+        try await perform {
+            _ = try await self.server.selectMailbox(mailbox)
+            let set = UIDSet(uids.map(UID.init))
+            try await self.server.store(flags: [.answered], on: set, operation: .add)
+        }
+    }
+
     /// Watch `mailbox` for server-side changes via IMAP IDLE on a dedicated
     /// connection, yielding once per change so the caller can re-sync. New mail
     /// (`exists`), expunges, and QRESYNC vanishes tick the stream; housekeeping

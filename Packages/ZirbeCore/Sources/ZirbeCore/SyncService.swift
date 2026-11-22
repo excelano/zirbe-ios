@@ -291,15 +291,12 @@ public actor SyncService {
     /// is delivered, so the optimistic local copy is inserted and the thread
     /// recomputed even if the rest fails, and the bubble appears at once.
     ///
-    /// Appending a copy to the server's Sent folder is best effort: it only helps
-    /// other mail clients see the message, so a failure there is logged and
-    /// swallowed rather than reported as a send failure for mail that did send.
-    /// The local copy carries the same Message-ID, so when Sent is later synced
-    /// the two reconcile to one row.
+    /// The Sent copy and the answered flag that follow are best effort (see
+    /// `finishSend`).
     public func send(_ draft: OutgoingDraft, login: MailLogin) async throws {
         try await transmit(draft, login: login)
         try await recordLocal(draft, state: .sent)
-        await saveSentCopy(draft, login: login)
+        await finishSend(draft, login: login)
     }
 
     /// The SMTP send on its own: the gate. Throws on any failure, having stored
@@ -337,18 +334,26 @@ public actor SyncService {
         }
     }
 
-    /// Append a copy of a delivered message to the server's Sent folder. Best
-    /// effort: it only helps other mail clients see the message, so a failure is
-    /// swallowed rather than reported as a send failure for mail that did send.
-    /// The same Message-ID as the SMTP send is carried through, so when Sent is
-    /// later synced the server copy and the local copy reconcile to one row.
-    public func saveSentCopy(_ draft: OutgoingDraft, login: MailLogin) async {
+    /// The server-side bookkeeping after a message is delivered, best effort, so a
+    /// failure here never reports mail that did send as unsent. A copy goes to the
+    /// server's Sent folder unless the provider files one itself (Gmail and
+    /// Outlook do, for mail sent through their SMTP), carrying the same Message-ID
+    /// as the SMTP send so the server copy and the local copy reconcile to one row. A reply also sets `\Answered` on the message it answers; a
+    /// reaction does not, since it is not an answer.
+    public func finishSend(_ draft: OutgoingDraft, login: MailLogin) async {
         do {
             try await engine.connect(username: account.username, login: login)
-            try await engine.saveToSent(draft.outgoingMessage)
+            if !ProviderPresets.filesSentCopy(forIMAPHost: account.imapHost) {
+                try await engine.saveToSent(draft.outgoingMessage)
+            }
+            if draft.reaction == nil,
+               let target = draft.inReplyTo,
+               let ref = try await store.messageRef(id: "mid:\(target)", accountID: account.id) {
+                try await engine.setAnswered(in: ref.mailbox, uids: [ref.uid])
+            }
         } catch {
-            // The mail was sent and is shown locally; a missing server-side Sent
-            // copy is a reconciliation detail, not a send failure.
+            // The mail was sent and is shown locally; a missing Sent copy or
+            // answered flag is a reconciliation detail, not a send failure.
         }
     }
 

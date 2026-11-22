@@ -391,6 +391,45 @@ final class SyncServiceTests: XCTestCase {
         XCTAssertTrue(inbox.isEmpty, "a sent-only conversation stays out of the inbox")
     }
 
+    func testSendLeavesSentToAProviderThatFilesItsOwnCopy() async throws {
+        let providers = [
+            Account(emailAddress: "me@gmail.com", imapHost: "imap.gmail.com", smtpHost: "smtp.gmail.com"),
+            Account(emailAddress: "me@contoso.onmicrosoft.com", imapHost: "outlook.office365.com", smtpHost: "smtp.office365.com"),
+        ]
+        for provider in providers {
+            let server = FakeMailServer()
+            let sender = FakeMailSender()
+            let service = SyncService(account: provider, store: store, engine: server, sender: sender)
+
+            try await service.send(newDraft(), login: login)
+
+            let delivered = await sender.sent
+            XCTAssertEqual(delivered.count, 1, provider.imapHost)
+            let copies = await server.sentCopies
+            XCTAssertTrue(copies.isEmpty, "\(provider.imapHost) files its own copy; a second would show twice elsewhere")
+        }
+    }
+
+    func testAReplyMarksTheMessageItAnswersAnswered() async throws {
+        let uid = await server.add(incoming("Lunch", id: "<ask@x>"))
+        try await sync.syncInbox(login: login)
+        let reply = OutgoingDraft(
+            from: account.selfParticipant,
+            to: [Participant(address: "pat@x.com")],
+            subject: "Re: Lunch",
+            body: "Noon works.",
+            inReplyTo: "<ask@x>",
+            references: ["<ask@x>"],
+            messageID: "<reply@x>",
+            date: Date(timeIntervalSince1970: 6_000)
+        )
+
+        try await sync.send(reply, login: login)
+
+        let answered = await server.calls(.setAnswered)
+        XCTAssertEqual(answered, [.setAnswered(mailbox: "INBOX", uids: [uid])])
+    }
+
     func testRefusedSendStoresNothing() async throws {
         await sender.failNext()
 

@@ -29,7 +29,7 @@ actor FakeMailServer: IMAPTransport {
     enum Operation: Hashable {
         case connect, fetchRecentEnvelopes, mailboxState, searchEnvelopes, listMailboxes, sentMailbox, draftsMailbox, fetchTextBodies
         case fetchHTMLBody, fetchAttachment, saveToSent, saveToDrafts, removeDraft
-        case setSeen, setFlagged, idleChanges, trash, move, archive, markJunk
+        case setSeen, setFlagged, setAnswered, idleChanges, trash, move, archive, markJunk
     }
 
     /// A call as the server saw it, for order and argument assertions.
@@ -49,6 +49,7 @@ actor FakeMailServer: IMAPTransport {
         case removeDraft(messageID: String)
         case setSeen(Bool, mailbox: String, uids: [UInt32])
         case setFlagged(Bool, mailbox: String, uids: [UInt32])
+        case setAnswered(mailbox: String, uids: [UInt32])
         case idleChanges(mailbox: String)
         case stopIdle
         case trash(mailbox: String, uids: [UInt32])
@@ -327,6 +328,11 @@ actor FakeMailServer: IMAPTransport {
         try setFlag("\\Flagged", flagged, in: mailbox, uids: uids)
     }
 
+    func setAnswered(in mailbox: String, uids: [UInt32]) async throws {
+        calls.append(.setAnswered(mailbox: mailbox, uids: uids))
+        try check(.setAnswered, in: mailbox)
+    }
+
     func idleChanges(in mailbox: String) async throws -> AsyncStream<Void> {
         calls.append(.idleChanges(mailbox: mailbox))
         try check(.idleChanges)
@@ -471,6 +477,7 @@ extension FakeMailServer.Call {
         case .removeDraft: .removeDraft
         case .setSeen: .setSeen
         case .setFlagged: .setFlagged
+        case .setAnswered: .setAnswered
         case .idleChanges: .idleChanges
         case .trash: .trash
         case .move: .move

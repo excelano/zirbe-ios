@@ -310,7 +310,7 @@ public final class InboxModel {
             pendingReplies[draft.messageID] = nil
             sendFailures[draft.messageID] = nil
             try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
-            await sync.saveSentCopy(draft, login: login)
+            await sync.finishSend(draft, login: login)
             delivered = true
         }
         if delivered { try? await reloadList() }
@@ -527,10 +527,10 @@ public final class InboxModel {
     }
 
     /// Transmit a built reply and record the outcome as a bubble in its thread. On
-    /// a successful SMTP send the bubble is filed as sent and a server Sent copy is
-    /// attempted; on failure it is filed as an undelivered bubble and the draft is
-    /// held for retry. Either way the refreshed conversation is returned for the
-    /// view to show.
+    /// a successful SMTP send the bubble is filed as sent and the server-side
+    /// bookkeeping follows (`SyncService.finishSend`); on failure it is filed as
+    /// an undelivered bubble and the draft is held for retry. Either way the
+    /// refreshed conversation is returned for the view to show.
     private func deliverReply(_ draft: OutgoingDraft, into threadID: String, login: MailLogin) async -> Thread? {
         do {
             try await sync.transmit(draft, login: login)
@@ -554,15 +554,14 @@ public final class InboxModel {
         sendFailures[draft.messageID] = nil
         try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
         errorMessage = nil
-        await sync.saveSentCopy(draft, login: login)
+        await sync.finishSend(draft, login: login)
         return try? await store.thread(id: threadID, accountID: account.id)
     }
 
-    /// Send a reaction (tapback) to a message in `thread`. The emoji rides out as
-    /// an `X-Zirbe-Reaction` header (a receiving Zirbe shows a badge; any other
-    /// client sees a short readable line), threaded onto the reacted-to message so
-    /// the badge lands on the right bubble. Unlike a reply there is no failed
-    /// bubble to retry: the SMTP send is the gate, and a failure surfaces in
+    /// Send a reaction (tapback) to a message in `thread`, as a standard RFC 9078
+    /// reaction (see `OutgoingDraft.reaction`), threaded onto the reacted-to
+    /// message so the badge lands on the right bubble. Unlike a reply there is no
+    /// failed bubble to retry: the SMTP send is the gate, and a failure surfaces in
     /// `errorMessage` having changed nothing. On success the reaction is filed as a
     /// local copy and the refreshed conversation is returned, the reaction now
     /// among its messages (rendered as a badge, not a bubble). Returns nil when not
@@ -585,7 +584,7 @@ public final class InboxModel {
             return try? await store.thread(id: thread.id, accountID: account.id)
         }
         try? await sync.recordLocal(draft, state: .sent)
-        await sync.saveSentCopy(draft, login: login)
+        await sync.finishSend(draft, login: login)
         return try? await store.thread(id: thread.id, accountID: account.id)
     }
 

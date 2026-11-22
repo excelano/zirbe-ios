@@ -78,6 +78,16 @@ public enum ProviderPresets {
         }
     }
 
+    /// Whether the provider files a copy of mail sent through its SMTP server in
+    /// the Sent folder itself. Appending another copy there would leave two in
+    /// every other mail program, so the app leaves Sent to the provider.
+    public static func filesSentCopy(forIMAPHost host: String) -> Bool {
+        switch host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case gmail.imapHost, outlook.imapHost: true
+        default: false
+        }
+    }
+
     public static func servers(for provider: OAuthProvider.ID) -> ProviderPreset {
         switch provider {
         case .microsoft: outlook

@@ -37,6 +37,7 @@ public protocol IMAPTransport: Sendable {
     func removeDraft(messageID: String) async throws
     func setSeen(_ seen: Bool, in mailbox: String, uids: [UInt32]) async throws
     func setFlagged(_ flagged: Bool, in mailbox: String, uids: [UInt32]) async throws
+    func setAnswered(in mailbox: String, uids: [UInt32]) async throws
     func idleChanges(in mailbox: String) async throws -> AsyncStream<Void>
     func stopIdle() async
     func trash(in mailbox: String, uids: [UInt32]) async throws
