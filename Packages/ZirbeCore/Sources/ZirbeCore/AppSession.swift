@@ -105,7 +105,7 @@ public final class AppSession {
                         await candidate.resume(login: login(for: credential, accountID: account.id))
                     }
                 } catch {
-                    errorMessage = error.localizedDescription
+                    errorMessage = ErrorText.readable(error)
                 }
                 models.append(candidate)
             }
@@ -113,7 +113,7 @@ public final class AppSession {
             currentAccountID = models.contains { $0.account.id == remembered } ? remembered : models.first?.account.id
             isViewingAllInboxes = models.count > 1
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
         }
     }
 
@@ -166,7 +166,7 @@ public final class AppSession {
             model.account.label = label
             model.account.color = color
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
         }
     }
 
@@ -236,7 +236,7 @@ public final class AppSession {
             models = [candidate]
             currentAccountID = DemoData.account.id
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
         }
     }
     #endif

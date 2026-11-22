@@ -36,6 +36,7 @@ struct ComposeView: View {
     /// background only re-saves when something actually changed.
     @State private var savedSnapshot: String
     @State private var isSending = false
+    @State private var sendError: String?
     @State private var isSavingDraft = false
     @State private var showCloseOptions = false
     @State private var showPicker = false
@@ -100,7 +101,7 @@ struct ComposeView: View {
                 divider
             }
 
-            if let error = sender.errorMessage {
+            if let error = sendError {
                 Text(error)
                     .font(.callout)
                     .foregroundStyle(.red)
@@ -330,6 +331,7 @@ struct ComposeView: View {
                 discardingDraft: draftContext
             )
             isSending = false
+            sendError = sent ? nil : sender.errorMessage
             if sent {
                 onSent?(sender.account)
                 dismiss()

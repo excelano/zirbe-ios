@@ -309,7 +309,7 @@ struct OnboardingView: View {
                 onConnected()
             } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = ErrorText.readable(error)
             }
             isConnecting = false
         }

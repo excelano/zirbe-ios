@@ -299,11 +299,11 @@ public final class InboxModel {
             } catch let refusal as MailSendError {
                 // Refused outright: no later sync would send it either.
                 pendingReplies[draft.messageID] = nil
-                sendFailures[draft.messageID] = Self.sendFailure(refusal)
+                sendFailures[draft.messageID] = ErrorText.readable(refusal)
                 try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
                 continue
             } catch {
-                sendFailures[draft.messageID] = Self.sendFailure(error)
+                sendFailures[draft.messageID] = ErrorText.readable(error)
                 continue
             }
             try? await sync.recordLocal(draft, state: .sent)
@@ -416,7 +416,7 @@ public final class InboxModel {
         do {
             return try await store.searchThreads(accountID: account.id, query: trimmed)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return []
         }
     }
@@ -433,7 +433,7 @@ public final class InboxModel {
         } catch MailEngineError.authenticationRejected {
             credentialRejected()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
         }
         return nil
     }
@@ -456,7 +456,7 @@ public final class InboxModel {
         do {
             return try await sync.loadConversation(id: id, login: login)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return nil
         }
     }
@@ -512,10 +512,6 @@ public final class InboxModel {
         sendFailures[messageID]
     }
 
-    static func sendFailure(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "Couldn't reach the mail server."
-    }
-
     /// Retry a reply that failed to send, resending the held draft verbatim. The
     /// reused Message-ID keeps the retry from doubling: a success flips the failed
     /// bubble to sent in place. Returns the refreshed conversation, or nil if not
@@ -548,7 +544,7 @@ public final class InboxModel {
             // is left untouched: setting it here would also surface in the next
             // compose or forward sheet, which reads the same property.
             pendingReplies[draft.messageID] = draft
-            sendFailures[draft.messageID] = Self.sendFailure(error)
+            sendFailures[draft.messageID] = ErrorText.readable(error)
             try? await store.holdForRetry(draft, accountID: account.id)
             try? await sync.recordLocal(draft, state: .failed)
             return try? await store.thread(id: threadID, accountID: account.id)
@@ -640,7 +636,7 @@ public final class InboxModel {
             try await reloadList()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return false
         }
     }
@@ -685,7 +681,7 @@ public final class InboxModel {
             try await reloadList()
             return DraftContext(messageID: messageID)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return nil
         }
     }
@@ -744,7 +740,7 @@ public final class InboxModel {
                 attachments: attachments
             )
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return nil
         }
     }
@@ -858,7 +854,7 @@ public final class InboxModel {
         do {
             return try await sync.fetchHTMLBody(messageID: messageID, login: login)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return nil
         }
     }
@@ -876,7 +872,7 @@ public final class InboxModel {
         do {
             return try await sync.fetchAttachment(messageID: messageID, partID: partID, login: login)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return nil
         }
     }
@@ -962,7 +958,7 @@ public final class InboxModel {
             try await reloadList()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
             return false
         }
     }
@@ -1102,7 +1098,7 @@ public final class InboxModel {
         do {
             try await body()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ErrorText.readable(error)
         }
     }
 }

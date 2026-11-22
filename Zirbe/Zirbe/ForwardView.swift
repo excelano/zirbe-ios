@@ -23,6 +23,7 @@ struct ForwardView: View {
     @State private var subject: String
     @State private var note = ""
     @State private var isSending = false
+    @State private var sendError: String?
     @State private var showPicker = false
     @State private var pickerTarget: Field = .to
     @FocusState private var focus: Field?
@@ -54,7 +55,7 @@ struct ForwardView: View {
             field("Subject:", placeholder: "Subject", text: $subject, field: .subject)
             divider
 
-            if let error = model.errorMessage {
+            if let error = sendError {
                 Text(error)
                     .font(.callout)
                     .foregroundStyle(.red)
@@ -218,6 +219,7 @@ struct ForwardView: View {
                 note: note
             )
             isSending = false
+            sendError = sent ? nil : model.errorMessage
             if sent { dismiss() }
         }
     }
