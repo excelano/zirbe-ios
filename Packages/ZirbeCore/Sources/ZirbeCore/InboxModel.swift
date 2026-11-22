@@ -54,6 +54,10 @@ public final class InboxModel {
     /// entry is dropped once it finally goes through.
     private var pendingReplies: [String: OutgoingDraft] = [:]
 
+    /// Why the last reply was refused outright, for the conversation to show;
+    /// the view clears it once shown. A refusal is not held for retry.
+    public var sendRefusal: String?
+
     /// Whether a gated operation — a sync or a mutation — currently holds the
     /// gate, and the operations queued behind it. Both are `@MainActor`-isolated
     /// along with the rest of this class, so they need no further synchronization.
@@ -289,7 +293,16 @@ public final class InboxModel {
     private func retryHeldReplies(login: MailLogin) async {
         var delivered = false
         for draft in pendingReplies.values.sorted(by: { $0.date < $1.date }) {
-            guard (try? await sync.transmit(draft, login: login)) != nil else { continue }
+            do {
+                try await sync.transmit(draft, login: login)
+            } catch is MailSendError {
+                // Refused outright: no later sync would send it either.
+                pendingReplies[draft.messageID] = nil
+                try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
+                continue
+            } catch {
+                continue
+            }
             try? await sync.recordLocal(draft, state: .sent)
             pendingReplies[draft.messageID] = nil
             try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
@@ -513,6 +526,11 @@ public final class InboxModel {
     private func deliverReply(_ draft: OutgoingDraft, into threadID: String, login: MailLogin) async -> Thread? {
         do {
             try await sync.transmit(draft, login: login)
+        } catch let refusal as MailSendError {
+            // A retry cannot change this, so nothing is held or recorded; the
+            // reply goes back in the bar with the reason.
+            sendRefusal = refusal.localizedDescription
+            return nil
         } catch {
             // The undelivered bubble is the indicator, so the shared errorMessage
             // is left untouched: setting it here would also surface in the next

@@ -48,6 +48,9 @@ public actor MailSender {
                 try await server.authenticateXOAUTH2(email: username, accessToken: try await token())
             }
             try await server.sendEmail(Email(outgoing))
+        } catch SMTPError.messageTooLarge(let size, let limit) {
+            try? await server.disconnect()
+            throw MailSendError.tooLarge(size: size, limit: limit)
         } catch {
             try? await server.disconnect()
             throw error
@@ -55,3 +58,22 @@ public actor MailSender {
         try? await server.disconnect()
     }
 }
+
+/// A send the server refused for a reason that a retry cannot change.
+public enum MailSendError: Error, Equatable, LocalizedError {
+    /// The message is larger than the server announces it accepts (RFC 1870
+    /// `SIZE`), found before anything was uploaded.
+    case tooLarge(size: Int, limit: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .tooLarge(size, limit):
+            "The message is \(Self.megabytes(size)) and the server accepts up to \(Self.megabytes(limit))."
+        }
+    }
+
+    static func megabytes(_ octets: Int) -> String {
+        String(format: "%.1f MB", Double(octets) / 1_000_000)
+    }
+}
+

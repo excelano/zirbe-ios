@@ -292,6 +292,20 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(reloaded?.messages.last?.sendState, .sent)
     }
 
+    func testAReplyTooLargeForTheServerIsGivenBackNotHeld() async throws {
+        let thread = try await signInWithPlan()
+        await sender.refuseNext(with: MailSendError.tooLarge(size: 31_200_000, limit: 25_000_000))
+
+        let result = await model.sendReply(to: thread, body: "Here are the photos")
+
+        XCTAssertNil(result, "the view puts the reply back in the bar")
+        XCTAssertEqual(model.sendRefusal, "The message is 31.2 MB and the server accepts up to 25.0 MB.")
+        let held = try await store.heldForRetry(accountID: account.id)
+        XCTAssertTrue(held.isEmpty, "a refusal no sync could change is not held for retry")
+        let reloaded = try await store.thread(id: thread.id, accountID: account.id)
+        XCTAssertFalse(reloaded?.messages.contains { $0.didFailToSend } ?? true)
+    }
+
     func testRefusedReactionSurfacesAnErrorAndChangesNothing() async throws {
         let thread = try await signInWithPlan()
         await sender.failNext()

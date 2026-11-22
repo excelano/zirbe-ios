@@ -265,6 +265,14 @@ struct ConversationView: View {
                 onMoved: onClose
             )
         }
+        .alert(
+            "Not Sent",
+            isPresented: Binding(get: { model.sendRefusal != nil }, set: { if !$0 { model.sendRefusal = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.sendRefusal ?? "")
+        }
         .confirmationDialog(
             "Unsubscribe?",
             isPresented: Binding(get: { pendingUnsubscribe != nil }, set: { if !$0 { pendingUnsubscribe = nil } }),
