@@ -226,5 +226,29 @@ final class ThreaderTests: XCTestCase {
         XCTAssertEqual(privately?.context?.messageID, "<a>")
         XCTAssertEqual(privately?.messages.compactMap(\.messageID), ["<b>"])
     }
+
+    // MARK: - Replies that lost their threading headers
+
+    func testAReplyThatLostItsHeadersJoinsItsConversation() {
+        let start = msg(id: "<a>", subject: "Lunch", from: "ana@x.com", to: [me], minutes: 1)
+        let answer = msg(id: "<b>", subject: "Re: Lunch", from: "ana@x.com", to: [me], minutes: 5)
+        let lostParent = msg(id: "<c>", inReplyTo: "<gone>", references: ["<gone>"], subject: "AW: Lunch", from: "ana@x.com", to: [me], minutes: 6)
+
+        let threads = Threader.thread([start, answer, lostParent], ownAddresses: [me])
+
+        XCTAssertEqual(shapes(threads), [["<a>", "<b>", "<c>"]])
+    }
+
+    func testOnlyAClaimedReplyAmongTheSamePeopleSoonAfterJoins() {
+        let start = msg(id: "<a>", subject: "Lunch", from: "ana@x.com", to: [me], minutes: 1)
+        let fresh = msg(id: "<b>", subject: "Lunch", from: "ana@x.com", to: [me], minutes: 5)
+        let forward = msg(id: "<c>", subject: "Fwd: Lunch", from: "ana@x.com", to: [me], minutes: 6)
+        let stranger = msg(id: "<d>", subject: "Re: Lunch", from: "ben@x.com", to: [me], minutes: 7)
+        let late = msg(id: "<e>", subject: "Re: Lunch", from: "ana@x.com", to: [me], minutes: 31 * 24 * 60)
+
+        let threads = Threader.thread([start, fresh, forward, stranger, late], ownAddresses: [me])
+
+        XCTAssertEqual(threads.count, 5)
+    }
 }
 

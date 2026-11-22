@@ -26,4 +26,17 @@ final class SubjectNormalizerTests: XCTestCase {
         XCTAssertEqual(SubjectNormalizer.normalize(nil), "")
         XCTAssertEqual(SubjectNormalizer.normalize("   "), "")
     }
+
+    func testTellsAReplyFromAForward() {
+        XCTAssertTrue(SubjectNormalizer.isReply("Re: Lunch"))
+        XCTAssertTrue(SubjectNormalizer.isReply("SV: Möte"))
+        XCTAssertTrue(SubjectNormalizer.isReply("Antw: Afspraak"))
+        XCTAssertTrue(SubjectNormalizer.isReply("RE[2]: Lunch"))
+        XCTAssertFalse(SubjectNormalizer.isReply("Fwd: Re: Lunch"))
+        XCTAssertFalse(SubjectNormalizer.isReply("Lunch"))
+        XCTAssertFalse(SubjectNormalizer.isReply("Review: draft"))
+        XCTAssertEqual(SubjectNormalizer.normalize("SV: VS: Möte"), "Möte")
+        XCTAssertEqual(SubjectNormalizer.normalize("WG: AW: Termin"), "Termin")
+    }
 }
+

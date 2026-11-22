@@ -55,7 +55,60 @@ public enum Threader {
             answering.context = answered
             return answering
         }
-        return threads + lists.map { makeListThread(listID: $0.key, messages: $0.value) }
+        let held = Set(messages.compactMap(\.messageID))
+        return joinOrphans(threads, held: held, ownAddresses: ownAddresses)
+            + lists.map { makeListThread(listID: $0.key, messages: $0.value) }
+    }
+
+    // MARK: - Replies that lost their threading headers
+
+    /// How far back a conversation's last message may be for a reply that lost
+    /// its threading headers to join it.
+    static let orphanWindow: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Join each conversation that begins with a reply whose threading headers
+    /// name nothing held to the conversation it most likely answers: the one
+    /// whose title equals the reply's subject without prefixes, whose members
+    /// are exactly the reply's people (the account's own addresses aside), and
+    /// which had a message in the 30 days before it. A forward, or a message
+    /// with no reply prefix, starts a conversation of its own.
+    private static func joinOrphans(_ threads: [Thread], held: Set<String>, ownAddresses: Set<String>) -> [Thread] {
+        func people(_ thread: Thread) -> Set<String> {
+            Set(thread.participants.map { $0.address.lowercased() }).subtracting(ownAddresses)
+        }
+        var joined = threads
+        while let (orphan, target) = joined.indices.lazy.compactMap({ index -> (Int, Int)? in
+            let thread = joined[index]
+            guard thread.context == nil,
+                  let first = thread.messages.first,
+                  let date = first.date,
+                  SubjectNormalizer.isReply(first.subject),
+                  ([first.inReplyTo].compactMap { $0 } + first.references).allSatisfy({ !held.contains($0) })
+            else { return nil }
+            let name = SubjectNormalizer.normalize(first.subject)
+            guard !name.isEmpty else { return nil }
+            let since = date.addingTimeInterval(-orphanWindow)
+            let candidates = joined.indices.filter { other in
+                other != index
+                    && joined[other].subject.caseInsensitiveCompare(name) == .orderedSame
+                    && people(joined[other]) == people(thread)
+            }
+            let best = candidates.compactMap { other -> (Date, Int)? in
+                let newest = joined[other].messages.compactMap(\.date).filter { $0 >= since && $0 <= date }.max()
+                return newest.map { ($0, other) }
+            }.max { $0.0 < $1.0 }
+            return best.map { (index, $0.1) }
+        }).first {
+            let into = joined[target]
+            let merged = makeThread(
+                id: into.id,
+                messages: (into.messages + joined[orphan].messages).chronological(),
+                context: into.context
+            )
+            joined[target] = merged
+            joined.remove(at: orphan)
+        }
+        return joined
     }
 
     // MARK: - Mailing lists
