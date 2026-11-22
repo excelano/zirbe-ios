@@ -306,6 +306,35 @@ final class InboxModelTests: XCTestCase {
         XCTAssertFalse(reloaded?.messages.contains { $0.didFailToSend } ?? true)
     }
 
+    func testARefusedSignInSaysWhyAndKeepsTheReplyForRetry() async throws {
+        let thread = try await signInWithPlan()
+        let reply = "5.7.139 Authentication unsuccessful, SmtpClientAuthentication is disabled for the Tenant. Visit https://aka.ms/smtp_auth"
+        await sender.refuseNext(with: MailSignInRefusal(reply: reply))
+
+        let failed = await model.sendReply(to: thread, body: "See you there")
+
+        let held = try XCTUnwrap(failed?.messages.last { $0.didFailToSend }?.messageID)
+        XCTAssertTrue(model.canRetry(messageID: held), "an administrator can turn sending back on")
+        XCTAssertEqual(model.sendFailure(messageID: held),
+                       "Your organization has turned off sending mail through SMTP. Its administrator needs to turn on SMTP AUTH.")
+        XCTAssertNil(model.sendRefusal)
+
+        _ = await model.retrySend(messageID: held, in: thread.id)
+
+        XCTAssertNil(model.sendFailure(messageID: held))
+        XCTAssertFalse(model.canRetry(messageID: held))
+    }
+
+    func testAFailureWithoutADescriptionStillSaysSomething() async throws {
+        let thread = try await signInWithPlan()
+        await sender.failNext()
+
+        let failed = await model.sendReply(to: thread, body: "See you there")
+
+        let held = try XCTUnwrap(failed?.messages.last { $0.didFailToSend }?.messageID)
+        XCTAssertEqual(model.sendFailure(messageID: held), "Couldn't reach the mail server.")
+    }
+
     func testRefusedReactionSurfacesAnErrorAndChangesNothing() async throws {
         let thread = try await signInWithPlan()
         await sender.failNext()

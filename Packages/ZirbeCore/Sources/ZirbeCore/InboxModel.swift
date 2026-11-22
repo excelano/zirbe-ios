@@ -53,6 +53,7 @@ public final class InboxModel {
     /// Message-ID. Mirrored in the store's outbox, so a relaunch keeps them; an
     /// entry is dropped once it finally goes through.
     private var pendingReplies: [String: OutgoingDraft] = [:]
+    private var sendFailures: [String: String] = [:]
 
     /// Why the last reply was refused outright, for the conversation to show;
     /// the view clears it once shown. A refusal is not held for retry.
@@ -295,16 +296,19 @@ public final class InboxModel {
         for draft in pendingReplies.values.sorted(by: { $0.date < $1.date }) {
             do {
                 try await sync.transmit(draft, login: login)
-            } catch is MailSendError {
+            } catch let refusal as MailSendError {
                 // Refused outright: no later sync would send it either.
                 pendingReplies[draft.messageID] = nil
+                sendFailures[draft.messageID] = Self.sendFailure(refusal)
                 try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
                 continue
             } catch {
+                sendFailures[draft.messageID] = Self.sendFailure(error)
                 continue
             }
             try? await sync.recordLocal(draft, state: .sent)
             pendingReplies[draft.messageID] = nil
+            sendFailures[draft.messageID] = nil
             try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
             await sync.saveSentCopy(draft, login: login)
             delivered = true
@@ -504,6 +508,14 @@ public final class InboxModel {
         pendingReplies[messageID] != nil
     }
 
+    public func sendFailure(messageID: String) -> String? {
+        sendFailures[messageID]
+    }
+
+    static func sendFailure(_ error: Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? "Couldn't reach the mail server."
+    }
+
     /// Retry a reply that failed to send, resending the held draft verbatim. The
     /// reused Message-ID keeps the retry from doubling: a success flips the failed
     /// bubble to sent in place. Returns the refreshed conversation, or nil if not
@@ -536,12 +548,14 @@ public final class InboxModel {
             // is left untouched: setting it here would also surface in the next
             // compose or forward sheet, which reads the same property.
             pendingReplies[draft.messageID] = draft
+            sendFailures[draft.messageID] = Self.sendFailure(error)
             try? await store.holdForRetry(draft, accountID: account.id)
             try? await sync.recordLocal(draft, state: .failed)
             return try? await store.thread(id: threadID, accountID: account.id)
         }
         try? await sync.recordLocal(draft, state: .sent)
         pendingReplies[draft.messageID] = nil
+        sendFailures[draft.messageID] = nil
         try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
         errorMessage = nil
         await sync.saveSentCopy(draft, login: login)

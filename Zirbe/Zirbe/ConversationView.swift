@@ -1385,6 +1385,14 @@ private struct MessageBubble: View {
                 }
                 if message.didFailToSend {
                     failedFooter
+                    if let reason = model.sendFailure(messageID: message.messageID ?? "") {
+                        Text(reason)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(isOwn ? .trailing : .leading)
+                            .padding(isOwn ? .trailing : .leading, 22)
+                            .padding(isOwn ? .leading : .trailing, 40)
+                    }
                 } else if showsFooterTime, let date = message.date {
                     Text(date, format: .dateTime.month().day().hour().minute())
                         .font(.caption2)

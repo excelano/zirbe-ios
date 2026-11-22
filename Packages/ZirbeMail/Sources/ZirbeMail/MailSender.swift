@@ -48,14 +48,38 @@ public actor MailSender {
                 try await server.authenticateXOAUTH2(email: username, accessToken: try await token())
             }
             try await server.sendEmail(Email(outgoing))
-        } catch SMTPError.messageTooLarge(let size, let limit) {
-            try? await server.disconnect()
-            throw MailSendError.tooLarge(size: size, limit: limit)
         } catch {
             try? await server.disconnect()
-            throw error
+            throw Self.readable(error)
         }
         try? await server.disconnect()
+    }
+
+    static func readable(_ error: Error) -> Error {
+        switch error as? SMTPError {
+        case let .messageTooLarge(size, limit):
+            MailSendError.tooLarge(size: size, limit: limit)
+        case let .authenticationFailed(reply):
+            MailSignInRefusal(reply: reply)
+        default:
+            error
+        }
+    }
+}
+
+public struct MailSignInRefusal: Error, Equatable, LocalizedError {
+    public let reply: String
+
+    public init(reply: String) {
+        self.reply = reply
+    }
+
+    public var errorDescription: String? {
+        if reply.localizedCaseInsensitiveContains("SmtpClientAuthentication is disabled") {
+            "Your organization has turned off sending mail through SMTP. Its administrator needs to turn on SMTP AUTH."
+        } else {
+            "The mail server refused to sign in for sending: \(reply)"
+        }
     }
 }
 

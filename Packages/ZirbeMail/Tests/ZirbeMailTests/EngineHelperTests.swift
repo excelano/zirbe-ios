@@ -26,6 +26,31 @@ final class EngineHelperTests: XCTestCase {
         XCTAssertEqual(MailSender.transportSecurity(port: 2525), .startTLS, "a non-standard port never falls to plaintext")
     }
 
+    // MARK: Send errors
+
+    func testASignInRefusalCarriesTheServersReply() {
+        let error = MailSender.readable(SMTPError.authenticationFailed("5.7.8 Username and Password not accepted"))
+
+        XCTAssertEqual(error as? MailSignInRefusal, MailSignInRefusal(reply: "5.7.8 Username and Password not accepted"))
+        XCTAssertEqual(error.localizedDescription,
+                       "The mail server refused to sign in for sending: 5.7.8 Username and Password not accepted")
+    }
+
+    func testMicrosoftsTurnedOffSMTPSaysWhoCanTurnItOn() {
+        let reply = "5.7.139 Authentication unsuccessful, SmtpClientAuthentication is disabled for the Tenant. Visit https://aka.ms/smtp_auth"
+
+        let error = MailSender.readable(SMTPError.authenticationFailed(reply))
+
+        XCTAssertEqual(error.localizedDescription,
+                       "Your organization has turned off sending mail through SMTP. Its administrator needs to turn on SMTP AUTH.")
+    }
+
+    func testAMessageTooLargeIsRefusedOutright() {
+        let error = MailSender.readable(SMTPError.messageTooLarge(messageSizeOctets: 31_200_000, maximumMessageSizeOctets: 25_000_000))
+
+        XCTAssertEqual(error as? MailSendError, .tooLarge(size: 31_200_000, limit: 25_000_000))
+    }
+
     // MARK: cid references
 
     func testReferencedCIDsAreFoundInImagesAndStylesAndNormalized() {
