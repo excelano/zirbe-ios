@@ -202,7 +202,12 @@ extension OutgoingDraft {
         emoji: String,
         sentAt date: Date = Date()
     ) -> OutgoingDraft {
-        let (to, cc) = ReplyBuilder.replyAllRecipients(to: thread, as: account)
+        var (to, cc) = ReplyBuilder.replyAllRecipients(to: thread, as: account)
+        // In a mailing list a reaction goes to the author alone, not to everyone
+        // on the list.
+        if thread.mailingList != nil, let author = target.from, !account.owns(author.address) {
+            (to, cc) = ([author], [])
+        }
         let targetID = target.messageID ?? ""
         var references = target.references.filter { !$0.isEmpty }
         if !targetID.isEmpty, references.last != targetID { references.append(targetID) }

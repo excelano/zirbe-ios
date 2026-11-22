@@ -806,4 +806,24 @@ final class MailStoreTests: XCTestCase {
         // A folder with no unread mail has no entry, not a zero.
         XCTAssertNil(counts["Sent"])
     }
+
+    func testAMailingListsMessagesStoreAndThreadAsOneConversation() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        let list = MailingList(id: "news.example.com", name: "Weekly News", post: nil)
+        var first = msg(id: "<n1@x>", subject: "Issue 1", from: "news@example.com", minutes: 1)
+        var second = msg(id: "<n2@x>", subject: "Issue 2", from: "news@example.com", minutes: 2)
+        first.mailingList = list
+        second.mailingList = list
+        try await store.save([first, second], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+
+        let summaries = try await store.threadSummaries(accountID: acct.id)
+        XCTAssertEqual(summaries.map(\.subject), ["Weekly News"])
+        let thread = try await store.thread(id: try XCTUnwrap(summaries.first?.id), accountID: acct.id)
+        XCTAssertEqual(thread?.messages.count, 2)
+        XCTAssertEqual(thread?.mailingList, list)
+    }
 }
+

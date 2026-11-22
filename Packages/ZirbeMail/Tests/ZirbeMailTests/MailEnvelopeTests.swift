@@ -16,4 +16,17 @@ final class MailEnvelopeTests: XCTestCase {
         let envelope = MailEnvelope(sequenceNumber: 3)
         XCTAssertEqual(envelope.id, "seq:3")
     }
+
+    func testAListsIdentityAndPostingAddressAreRead() {
+        let named = MailEnvelope.listIdentity("\"Hiking Club\" <Hiking.Lists.Example.org>")
+        XCTAssertEqual(named?.id, "hiking.lists.example.org")
+        XCTAssertEqual(named?.name, "Hiking Club")
+        XCTAssertEqual(MailEnvelope.listIdentity("<news.example.com>")?.name, "news.example.com")
+        XCTAssertNil(MailEnvelope.listIdentity("no brackets here"))
+
+        XCTAssertEqual(MailEnvelope.listPostAddress("<mailto:Hiking@Lists.Example.org?subject=hi>"), "hiking@lists.example.org")
+        XCTAssertEqual(MailEnvelope.listPostAddress("<https://example.org/post>, <mailto:post@example.org>"), "post@example.org")
+        XCTAssertNil(MailEnvelope.listPostAddress("NO"))
+    }
 }
+

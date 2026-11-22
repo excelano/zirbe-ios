@@ -58,6 +58,8 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
     var invite: Invite?
     var transcript: String?
     var media: Int
+    /// The mailing list the message came through, as JSON, from its `List-Id`.
+    var mailingList: MailingList?
 
     init(_ message: Message, accountID: String, mailboxName: String) {
         self.id = message.id
@@ -83,6 +85,7 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
         self.invite = message.invite
         self.transcript = message.transcript
         self.media = message.media.rawValue
+        self.mailingList = message.mailingList
         self.snippet = Self.preview(text: message.bodyText, invite: message.invite)
             ?? message.transcript.flatMap(Self.preview(of:))
     }
@@ -144,7 +147,8 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
             reaction: reaction,
             invite: invite,
             transcript: transcript,
-            media: MessageMedia(rawValue: media)
+            media: MessageMedia(rawValue: media),
+            mailingList: mailingList
         )
     }
 }
@@ -186,9 +190,11 @@ private struct ThreadingProbe: Decodable, FetchableRecord {
     /// Read for the meeting UID an invitation threads by; nil on ordinary mail.
     var invite: Invite?
     var media: Int
+    /// Read so a mailing list's messages thread as one conversation.
+    var mailingList: MailingList?
 
     /// The columns to select, in one place so the SQL and the decoder can't drift.
-    static let columns = "id, uid, messageID, inReplyTo, referenceIDs, subject, fromAddress, fromName, toParticipants, ccParticipants, date, flags, hasHTML, threadID, sendState, reaction, snippet, invite, media"
+    static let columns = "id, uid, messageID, inReplyTo, referenceIDs, subject, fromAddress, fromName, toParticipants, ccParticipants, date, flags, hasHTML, threadID, sendState, reaction, snippet, invite, media, mailingList"
 
     /// The domain message, with an empty body and no attachments. Enough to thread
     /// and to build a thread row, and never written back.
@@ -210,7 +216,8 @@ private struct ThreadingProbe: Decodable, FetchableRecord {
             sendState: SendState(rawValue: sendState) ?? .sent,
             reaction: reaction,
             invite: invite,
-            media: MessageMedia(rawValue: media)
+            media: MessageMedia(rawValue: media),
+            mailingList: mailingList
         )
     }
 }
@@ -1691,6 +1698,13 @@ public final class MailStore: @unchecked Sendable {
                     sql: "UPDATE message SET invite = ? WHERE accountID = ? AND id = ?",
                     arguments: [String(decoding: try encoder.encode(invite), as: UTF8.self), row["accountID"] as String, row["id"] as String]
                 )
+            }
+        }
+        migrator.registerMigration("v27-message-mailing-list") { db in
+            // Filled as the sync re-fetches each folder's recent envelopes, whose
+            // header update writes every non-body column.
+            try db.alter(table: "message") { t in
+                t.add(column: "mailingList", .text)
             }
         }
         return migrator

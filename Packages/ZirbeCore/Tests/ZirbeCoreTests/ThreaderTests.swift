@@ -189,4 +189,42 @@ final class ThreaderTests: XCTestCase {
         // With merging on, they collapse.
         XCTAssertEqual(Threader.thread([a, b], mergeBySubject: true).count, 1)
     }
+
+    // MARK: - Mailing lists
+
+    private let hiking = MailingList(id: "hiking.example.org", name: "Hiking Club", post: "hiking@example.org")
+
+    private func listed(_ message: Message) -> Message {
+        var message = message
+        message.mailingList = hiking
+        return message
+    }
+
+    func testAMailingListReadsAsOneConversationNamedForTheList() {
+        let first = listed(msg(id: "<a>", from: "ana@x.com", to: ["hiking@example.org"], minutes: 1))
+        let unrelated = listed(msg(id: "<b>", subject: "Gear swap", from: "ben@x.com", to: ["hiking@example.org"], minutes: 2))
+        let mine = msg(id: "<c>", inReplyTo: "<a>", references: ["<a>"], from: me, to: ["hiking@example.org"], minutes: 3)
+
+        let threads = Threader.thread([first, unrelated, mine], ownAddresses: [me])
+
+        XCTAssertEqual(threads.count, 1)
+        let list = threads[0]
+        XCTAssertEqual(list.subject, "Hiking Club")
+        XCTAssertEqual(list.messages.compactMap(\.messageID), ["<a>", "<b>", "<c>"])
+        XCTAssertEqual(list.mailingList, hiking)
+        XCTAssertFalse(list.participants.contains { $0.address == "hiking@example.org" })
+    }
+
+    func testAPrivateAnswerToAListPostStartsItsOwnConversationWithThePostAsContext() {
+        let post = listed(msg(id: "<a>", from: "ana@x.com", to: ["hiking@example.org"], minutes: 1))
+        let answer = msg(id: "<b>", inReplyTo: "<a>", references: ["<a>"], subject: "Re: Lunch", from: me, to: ["ana@x.com"], minutes: 2)
+
+        let threads = Threader.thread([post, answer], ownAddresses: [me])
+
+        XCTAssertEqual(threads.count, 2)
+        let privately = threads.first { $0.mailingList == nil }
+        XCTAssertEqual(privately?.context?.messageID, "<a>")
+        XCTAssertEqual(privately?.messages.compactMap(\.messageID), ["<b>"])
+    }
 }
+

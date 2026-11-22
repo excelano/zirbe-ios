@@ -67,6 +67,8 @@ public struct Message: Sendable, Hashable, Identifiable {
     public var invite: Invite?
     public var transcript: String?
     public var media: MessageMedia
+    /// The mailing list this message came through, when it carries a `List-Id`.
+    public var mailingList: MailingList?
 
     public init(
         messageID: String? = nil,
@@ -86,7 +88,8 @@ public struct Message: Sendable, Hashable, Identifiable {
         reaction: String? = nil,
         invite: Invite? = nil,
         transcript: String? = nil,
-        media: MessageMedia? = nil
+        media: MessageMedia? = nil,
+        mailingList: MailingList? = nil
     ) {
         self.messageID = messageID
         self.uid = uid
@@ -106,6 +109,7 @@ public struct Message: Sendable, Hashable, Identifiable {
         self.invite = invite
         self.transcript = transcript
         self.media = media ?? MessageMedia(mimeTypes: attachments.map(\.mimeType))
+        self.mailingList = mailingList
     }
 
     /// Whether this message answers a meeting invitation (an attendee's accept,

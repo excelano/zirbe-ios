@@ -337,7 +337,9 @@ struct ConversationView: View {
         }
         let messages = [newValue.context].compactMap { $0 } + newValue.conversationMessages
         stack = MessageStack.rows(messages, ownedBy: model.account.ownAddresses)
-        participantDeltas = Dictionary(
+        // A mailing list's members change with every post, so its conversation
+        // shows no notes of people joining or leaving.
+        participantDeltas = newValue.mailingList != nil ? [:] : Dictionary(
             ParticipantChange.deltas(across: messages, excluding: model.account.ownAddresses)
                 .map { ($0.messageID, $0) },
             uniquingKeysWith: { first, _ in first }

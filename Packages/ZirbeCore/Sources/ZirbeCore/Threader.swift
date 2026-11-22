@@ -35,12 +35,67 @@ public enum Threader {
         ownAddresses: Set<String> = [],
         mergeBySubject: Bool = false
     ) -> [Thread] {
-        let forest = buildForest(messages)
+        let (lists, rest) = partitionLists(messages)
+        let forest = buildForest(rest)
         var roots = prune(forest, isRoot: true)
         if mergeBySubject {
             roots = mergeRootsBySubject(roots)
         }
-        return roots.flatMap { makeThreads($0, ownAddresses: ownAddresses) }
+        let posted = Dictionary(
+            lists.values.joined().compactMap { message in message.messageID.map { ($0, message) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let threads = roots.flatMap { makeThreads($0, ownAddresses: ownAddresses) }.map { thread in
+            guard thread.context == nil,
+                  let first = thread.messages.first,
+                  let answered = ([first.inReplyTo].compactMap { $0 } + first.references.reversed())
+                      .lazy.compactMap({ posted[$0] }).first
+            else { return thread }
+            var answering = thread
+            answering.context = answered
+            return answering
+        }
+        return threads + lists.map { makeListThread(listID: $0.key, messages: $0.value) }
+    }
+
+    // MARK: - Mailing lists
+
+    /// Split off the messages of mailing lists, keyed by list identifier: those
+    /// carrying a `List-Id`, and those addressed to a list's posting address,
+    /// which is how the user's own posts (whose Sent copies carry no `List-Id`)
+    /// join. A reply sent to one person rather than the list stays with the rest
+    /// and splits off as a private reply.
+    private static func partitionLists(_ messages: [Message]) -> (lists: [String: [Message]], rest: [Message]) {
+        var posts: [String: String] = [:]
+        for message in messages {
+            if let list = message.mailingList, let post = list.post { posts[post] = list.id }
+        }
+        var lists: [String: [Message]] = [:]
+        var rest: [Message] = []
+        for message in messages {
+            let listID = message.mailingList?.id
+                ?? (message.to + message.cc).lazy.compactMap({ posts[$0.address.lowercased()] }).first
+            if let listID {
+                lists[listID, default: []].append(message)
+            } else {
+                rest.append(message)
+            }
+        }
+        return (lists, rest)
+    }
+
+    /// One conversation for one list: every message in time order, named for the
+    /// list, with the posting address left out of its members.
+    private static func makeListThread(listID: String, messages: [Message]) -> Thread {
+        let ordered = messages.chronological()
+        let list = ordered.reversed().lazy.compactMap(\.mailingList).first
+            ?? MailingList(id: listID, name: listID)
+        var thread = makeThread(id: "list:\(listID)", messages: ordered, context: nil)
+        thread.subject = list.name
+        if let post = list.post {
+            thread.participants.removeAll { $0.address.lowercased() == post }
+        }
+        return thread
     }
 
     // MARK: - JWZ container tree

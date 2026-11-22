@@ -44,6 +44,12 @@ public struct Thread: Sendable, Hashable, Identifiable {
         self.context = context
     }
 
+    /// The mailing list this conversation belongs to, when it is a list's
+    /// conversation: one per list, named for it, with replies addressed to it.
+    public var mailingList: MailingList? {
+        messages.reversed().lazy.compactMap(\.mailingList).first
+    }
+
     /// A thread is unread if any of its chat messages is unread. Reactions are
     /// excluded: a tapback landing on your message shouldn't bold the thread, the
     /// way a reaction is a lightweight acknowledgement rather than new mail.

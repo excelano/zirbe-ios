@@ -26,7 +26,10 @@ extension MailEnvelope {
             // Custom header keys arrive lowercased from the parser, so the
             // reaction marker is read by the lowercased name.
             reaction: info.additionalFields?[MailHeader.zirbeReaction.lowercased()],
-            partTypes: info.parts.map(\.contentType)
+            partTypes: info.parts.map(\.contentType),
+            listID: Self.listIdentity(info.additionalFields?["list-id"])?.id,
+            listName: Self.listIdentity(info.additionalFields?["list-id"])?.name,
+            listPost: Self.listPostAddress(info.additionalFields?["list-post"])
         )
     }
 }

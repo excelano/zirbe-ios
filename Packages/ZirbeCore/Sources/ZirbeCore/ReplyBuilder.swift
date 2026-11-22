@@ -15,12 +15,16 @@ public enum ReplyBuilder {
     /// To keeps the latest message's sender together with its To recipients; Cc
     /// keeps its Cc. The account's own address is removed from both (you don't
     /// reply to yourself), and no address appears twice, with To winning over Cc.
-    /// Returns empty lists for an empty thread.
+    /// In a mailing list's conversation the reply goes to the list's posting
+    /// address instead. Returns empty lists for an empty thread.
     public static func replyAllRecipients(
         to thread: Thread,
         as account: Account
     ) -> (to: [Participant], cc: [Participant]) {
         guard let latest = thread.messages.last else { return ([], []) }
+        if let list = thread.mailingList, let post = list.post {
+            return ([Participant(address: post, displayName: list.name)], [])
+        }
         var placed = account.ownAddresses
 
         var to: [Participant] = []
@@ -80,9 +84,13 @@ public enum ReplyBuilder {
 
     /// A reply subject: the thread subject with a single `Re:` prefix. The thread
     /// subject is already normalized (prior `Re:`/`Fwd:` stripped), so this adds
-    /// exactly one and never stacks them.
+    /// exactly one and never stacks them. A mailing list's conversation is named
+    /// for the list, so its reply takes the latest message's subject instead.
     public static func replySubject(for thread: Thread) -> String {
-        let base = thread.subject.trimmingCharacters(in: .whitespaces)
+        let base = (thread.mailingList == nil
+            ? thread.subject
+            : SubjectNormalizer.normalize(thread.messages.last?.subject))
+            .trimmingCharacters(in: .whitespaces)
         return base.isEmpty ? "Re:" : "Re: \(base)"
     }
 

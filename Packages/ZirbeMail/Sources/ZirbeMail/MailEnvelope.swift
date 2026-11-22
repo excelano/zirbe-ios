@@ -105,6 +105,12 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
     /// full header block the fetch already pulls, so it needs no extra round trip.
     public var reaction: String?
     public var partTypes: [String]
+    /// The mailing list from `List-Id`: its lowercased identifier and its name
+    /// (the identifier when the header has no phrase). Nil for other mail.
+    public var listID: String?
+    public var listName: String?
+    /// The list's posting address from a `mailto:` in `List-Post`, lowercased.
+    public var listPost: String?
 
     /// Stable identity for SwiftUI lists: the UID when present, else the
     /// Message-ID, else the sequence number.
@@ -127,7 +133,10 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
         references: [String] = [],
         flags: [String] = [],
         reaction: String? = nil,
-        partTypes: [String] = []
+        partTypes: [String] = [],
+        listID: String? = nil,
+        listName: String? = nil,
+        listPost: String? = nil
     ) {
         self.sequenceNumber = sequenceNumber
         self.uid = uid
@@ -142,5 +151,47 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
         self.flags = flags
         self.reaction = reaction
         self.partTypes = partTypes
+        self.listID = listID
+        self.listName = listName
+        self.listPost = listPost
     }
 }
+
+extension MailEnvelope {
+    /// The identifier and name a `List-Id` value carries: `"Hiking Club"
+    /// <hiking.lists.example.org>` gives the bracketed identifier, lowercased,
+    /// and the phrase before it, unquoted, or the identifier when there is none.
+    static func listIdentity(_ value: String?) -> (id: String, name: String)? {
+        guard let value,
+              let open = value.lastIndex(of: "<"),
+              let close = value[open...].firstIndex(of: ">")
+        else { return nil }
+        let id = value[value.index(after: open)..<close]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !id.isEmpty else { return nil }
+        let phrase = value[..<open]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            .trimmingCharacters(in: .whitespaces)
+        return (id, phrase.isEmpty ? id : phrase)
+    }
+
+    /// The posting address in a `List-Post` value: the first bracketed `mailto:`,
+    /// without any query, lowercased. `List-Post: NO` and web-only lists give nil.
+    static func listPostAddress(_ value: String?) -> String? {
+        guard let value else { return nil }
+        for piece in value.split(separator: "<", omittingEmptySubsequences: false).dropFirst() {
+            guard let end = piece.firstIndex(of: ">") else { continue }
+            let link = piece[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard link.lowercased().hasPrefix("mailto:") else { continue }
+            let address = link.dropFirst("mailto:".count)
+                .split(separator: "?", maxSplits: 1).first.map(String.init)?
+                .removingPercentEncoding?
+                .lowercased()
+            if let address, address.contains("@") { return address }
+        }
+        return nil
+    }
+}
+

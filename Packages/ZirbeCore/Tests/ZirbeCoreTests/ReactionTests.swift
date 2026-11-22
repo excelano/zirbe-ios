@@ -164,4 +164,29 @@ final class ReactionTests: XCTestCase {
         let unread = try await store.unreadCounts(accountID: acct.id)
         XCTAssertEqual(unread["INBOX"], 1)
     }
+
+    // MARK: - Mailing lists
+
+    func testInAListAReplyGoesToTheListAndAReactionToTheAuthor() {
+        let post = Message(
+            messageID: "<a@x>",
+            subject: "Ridge walk Saturday",
+            from: participant("pat@x.com", "Pat"),
+            to: [participant("hiking@example.org")],
+            date: Date(timeIntervalSince1970: 0),
+            mailingList: MailingList(id: "hiking.example.org", name: "Hiking Club", post: "hiking@example.org")
+        )
+        let list = ZirbeCore.Thread(id: "list:hiking.example.org", subject: "Hiking Club", messages: [post],
+                                    participants: [], lastActivity: post.date)
+
+        let (to, cc) = ReplyBuilder.replyAllRecipients(to: list, as: account())
+        XCTAssertEqual(to.map(\.address), ["hiking@example.org"])
+        XCTAssertTrue(cc.isEmpty)
+        XCTAssertEqual(ReplyBuilder.replySubject(for: list), "Re: Ridge walk Saturday")
+
+        let reaction = OutgoingDraft.reaction(to: post, in: list, as: account(), emoji: "👍")
+        XCTAssertEqual(reaction.to.map(\.address), ["pat@x.com"])
+        XCTAssertTrue(reaction.cc.isEmpty)
+    }
 }
+

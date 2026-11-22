@@ -56,6 +56,9 @@ do {
         if let inReplyTo = envelope.inReplyTo {
             print("  in-reply-to: \(inReplyTo)")
         }
+        if let listID = envelope.listID {
+            print("  list:        \(envelope.listName ?? listID) <\(listID)> post: \(envelope.listPost ?? "none")")
+        }
         if let reaction = envelope.reaction {
             print("  reaction:    \(reaction.isEmpty ? "(withdrawn)" : reaction)")
         }

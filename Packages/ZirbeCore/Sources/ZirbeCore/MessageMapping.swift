@@ -23,7 +23,10 @@ extension Message {
             date: envelope.date,
             flags: Set(envelope.flags.map(Flag.init(imap:))),
             reaction: envelope.reaction,
-            media: MessageMedia(mimeTypes: envelope.partTypes)
+            media: MessageMedia(mimeTypes: envelope.partTypes),
+            mailingList: envelope.listID.map {
+                MailingList(id: $0, name: envelope.listName ?? $0, post: envelope.listPost)
+            }
         )
     }
 }
