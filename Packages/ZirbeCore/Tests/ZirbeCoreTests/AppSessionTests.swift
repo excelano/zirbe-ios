@@ -88,6 +88,24 @@ final class AppSessionTests: XCTestCase {
         await switching.value
     }
 
+    func testAFolderPickedOnAnotherAccountOpensWhileTheOldWatchCloses() async throws {
+        let session = makeSession()
+        try await connectBoth(session)
+        await servers[home.id]!.holdNextStopIdle()
+        let workModel = try XCTUnwrap(session.models.first { $0.account.id == work.id })
+        let archive = Mailbox(accountID: work.id, name: "Archive", role: .archive)
+
+        let picking = Task {
+            await session.select(self.work.id)
+            await workModel.selectMailbox(archive)
+        }
+        let opened = await eventually { workModel.currentMailbox == archive }
+
+        XCTAssertTrue(opened)
+        await servers[home.id]!.release()
+        await picking.value
+    }
+
     func testRestoreResumesEveryAccountAndReturnsToTheLastViewed() async throws {
         let first = makeSession()
         try await connectBoth(first)

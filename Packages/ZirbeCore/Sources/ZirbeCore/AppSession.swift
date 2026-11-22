@@ -181,7 +181,7 @@ public final class AppSession {
         isViewingAllInboxes = false
         remember(accountID)
         for other in models where other.account.id != accountID {
-            await other.stopLiveRefresh()
+            Task { await other.stopLiveRefresh() }
         }
     }
 
