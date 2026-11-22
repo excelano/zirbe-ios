@@ -125,6 +125,7 @@ struct ConversationView: View {
     @AppStorage(SettingsKeys.openHTMLInWebView) private var openHTMLInWebView = false
     /// When set, the Web View loads remote images by default rather than blocking
     /// them.
+    @AppStorage(SettingsKeys.trustedImageSenders) private var trustedImageSenders = ""
     @AppStorage(SettingsKeys.loadRemoteImages) private var loadRemoteImages = false
 
     /// A message switched to its web view: which message, the fetched body (HTML
@@ -343,7 +344,11 @@ struct ConversationView: View {
     private func prepareInitialWebView(_ thread: ZirbeCore.Thread) async {
         guard openHTMLInWebView, let latest = thread.latestHTMLMessage else { return }
         if let body = await model.htmlBody(for: latest.id) {
-            activeWeb = ActiveWeb(messageID: latest.id, body: body, showImages: loadRemoteImages)
+            activeWeb = ActiveWeb(
+                messageID: latest.id,
+                body: body,
+                showImages: loadRemoteImages || ImageTrust.trusts(trustedImageSenders, sender: latest.from?.address)
+            )
         }
     }
 
@@ -527,6 +532,20 @@ struct ConversationView: View {
                 ) {
                     activeWeb?.showImages.toggle()
                 }
+                if !loadRemoteImages, let sender = webSender(active), !ImageTrust.trusts(trustedImageSenders, sender: sender) {
+                    Divider().frame(height: 18)
+                    Menu {
+                        Button("From \(sender)") { trust(sender) }
+                        if let domain = sender.split(separator: "@").last.map(String.init) {
+                            Button("From anyone at \(domain)") { trust(domain) }
+                        }
+                    } label: {
+                        Label("Always", systemImage: "eye.circle")
+                            .font(.subheadline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .accessibilityLabel("Always Show Images")
+                }
             }
             .foregroundStyle(.tint)
             .padding(.horizontal)
@@ -554,6 +573,18 @@ struct ConversationView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .id(active.messageID)
         }
+    }
+
+    /// The sender of the message open in the web view, lowercased, for offering
+    /// to trust its images.
+    private func webSender(_ active: ActiveWeb) -> String? {
+        thread?.messages.first { $0.id == active.messageID }?.from?.address.lowercased()
+    }
+
+    /// Trust a sender or a domain's images from now on, and show them here.
+    private func trust(_ entry: String) {
+        trustedImageSenders = ImageTrust.adding(entry, to: trustedImageSenders)
+        activeWeb?.showImages = true
     }
 
     /// A message's real attachments, for the web view's row.
@@ -1238,6 +1269,13 @@ private struct MessageBubble: View {
     /// "Web View" button opens with images and the separate "Show Images" shortcut
     /// is dropped as redundant.
     @AppStorage(SettingsKeys.loadRemoteImages) private var loadRemoteImages = false
+    @AppStorage(SettingsKeys.trustedImageSenders) private var trustedImageSenders = ""
+
+    /// Whether this message's Web View loads remote images without asking: all
+    /// mail when the setting is on, else a trusted sender's or domain's.
+    private var imagesByDefault: Bool {
+        loadRemoteImages || ImageTrust.trusts(trustedImageSenders, sender: message.from?.address)
+    }
 
     /// The sender avatar's diameter and the gap to the bubble. The leading inset
     /// for the name and timestamp is derived from these so they line up over the
@@ -1554,12 +1592,12 @@ private struct MessageBubble: View {
         HStack(spacing: 0) {
             WebControlButton(
                 title: "Web View", systemImage: "safari", edge: .leading,
-                isLoading: loadingWithImages == loadRemoteImages
-            ) { openWebView(showImages: loadRemoteImages) }
+                isLoading: loadingWithImages == imagesByDefault
+            ) { openWebView(showImages: imagesByDefault) }
             // When images already load by default the second button would just
             // repeat the first, so it only appears in the privacy-default mode as
             // the one-tap way to bring images in.
-            if !loadRemoteImages {
+            if !imagesByDefault {
                 Divider().frame(height: 18)
                 WebControlButton(
                     title: "Show Images", systemImage: "eye", edge: .trailing,

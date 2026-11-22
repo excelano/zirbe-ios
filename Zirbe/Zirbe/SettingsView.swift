@@ -15,6 +15,9 @@ enum SettingsKeys {
     static let openHTMLInWebView = "settings.openHTMLInWebView"
     /// Load remote images in Web View by default rather than blocking them.
     static let loadRemoteImages = "settings.loadRemoteImages"
+    /// The senders and domains whose remote images load without asking, one per
+    /// line (see `ImageTrust`).
+    static let trustedImageSenders = "settings.trustedImageSenders"
     /// Post a banner when a background check finds new mail. Defaults on; the
     /// notifier reads the same key and treats an unset value as on.
     static let newMailNotifications = "settings.newMailNotifications"
@@ -34,6 +37,7 @@ struct SettingsView: View {
     @State private var notificationsDenied = false
     @AppStorage(SettingsKeys.openHTMLInWebView) private var openHTMLInWebView = false
     @AppStorage(SettingsKeys.loadRemoteImages) private var loadRemoteImages = false
+    @AppStorage(SettingsKeys.trustedImageSenders) private var trustedImageSenders = ""
     @AppStorage(SettingsKeys.newMailNotifications) private var newMailNotifications = true
     @AppStorage(SettingsKeys.previewLineCount) private var previewLineCount = 2
     #if DEBUG
@@ -95,10 +99,21 @@ struct SettingsView: View {
                 Section {
                     Toggle("Open HTML email in Web View", isOn: $openHTMLInWebView)
                     Toggle("Load remote images", isOn: $loadRemoteImages)
+                    if !loadRemoteImages {
+                        ForEach(ImageTrust.entries(trustedImageSenders), id: \.self) { entry in
+                            Label(entry, systemImage: "eye")
+                        }
+                        .onDelete { offsets in
+                            let entries = ImageTrust.entries(trustedImageSenders)
+                            for index in offsets {
+                                trustedImageSenders = ImageTrust.removing(entries[index], from: trustedImageSenders)
+                            }
+                        }
+                    }
                 } header: {
                     Text("HTML Email")
                 } footer: {
-                    Text("Zirbe shows the plain-text version as a chat bubble by default. Web View renders the full HTML message. Loading remote images can let a sender know you opened the message and roughly where you are, so it stays off unless you turn it on.")
+                    Text("Zirbe shows the plain-text version as a chat bubble by default. Web View renders the full HTML message. Loading remote images can let a sender know you opened the message and roughly where you are, so it stays off unless you turn it on. Always Show Images in the Web View lets one sender, or everyone at their domain, load pictures without asking; swipe one here to take it back.")
                 }
 
                 #if DEBUG
