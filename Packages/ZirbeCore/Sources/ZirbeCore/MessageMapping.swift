@@ -26,7 +26,8 @@ extension Message {
             media: MessageMedia(mimeTypes: envelope.partTypes),
             mailingList: envelope.listID.map {
                 MailingList(id: $0, name: envelope.listName ?? $0, post: envelope.listPost)
-            }
+            },
+            unsubscribe: envelope.unsubscribe
         )
     }
 }

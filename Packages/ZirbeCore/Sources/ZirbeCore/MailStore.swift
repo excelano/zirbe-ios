@@ -60,6 +60,8 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
     var media: Int
     /// The mailing list the message came through, as JSON, from its `List-Id`.
     var mailingList: MailingList?
+    /// The `List-Unsubscribe` links, as JSON; nil on rows stored before they were kept.
+    var unsubscribe: [String]?
 
     init(_ message: Message, accountID: String, mailboxName: String) {
         self.id = message.id
@@ -86,6 +88,7 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
         self.transcript = message.transcript
         self.media = message.media.rawValue
         self.mailingList = message.mailingList
+        self.unsubscribe = message.unsubscribe.isEmpty ? nil : message.unsubscribe
         self.snippet = Self.preview(text: message.bodyText, invite: message.invite)
             ?? message.transcript.flatMap(Self.preview(of:))
     }
@@ -148,7 +151,8 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
             invite: invite,
             transcript: transcript,
             media: MessageMedia(rawValue: media),
-            mailingList: mailingList
+            mailingList: mailingList,
+            unsubscribe: unsubscribe ?? []
         )
     }
 }
@@ -1705,6 +1709,11 @@ public final class MailStore: @unchecked Sendable {
             // header update writes every non-body column.
             try db.alter(table: "message") { t in
                 t.add(column: "mailingList", .text)
+            }
+        }
+        migrator.registerMigration("v28-message-unsubscribe") { db in
+            try db.alter(table: "message") { t in
+                t.add(column: "unsubscribe", .text)
             }
         }
         return migrator

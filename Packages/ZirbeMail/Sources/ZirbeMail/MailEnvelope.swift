@@ -111,6 +111,8 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
     public var listName: String?
     /// The list's posting address from a `mailto:` in `List-Post`, lowercased.
     public var listPost: String?
+    /// The links in `List-Unsubscribe` (RFC 2369), in the order given.
+    public var unsubscribe: [String]
 
     /// Stable identity for SwiftUI lists: the UID when present, else the
     /// Message-ID, else the sequence number.
@@ -136,7 +138,8 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
         partTypes: [String] = [],
         listID: String? = nil,
         listName: String? = nil,
-        listPost: String? = nil
+        listPost: String? = nil,
+        unsubscribe: [String] = []
     ) {
         self.sequenceNumber = sequenceNumber
         self.uid = uid
@@ -154,6 +157,7 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
         self.listID = listID
         self.listName = listName
         self.listPost = listPost
+        self.unsubscribe = unsubscribe
     }
 }
 
@@ -180,11 +184,7 @@ extension MailEnvelope {
     /// The posting address in a `List-Post` value: the first bracketed `mailto:`,
     /// without any query, lowercased. `List-Post: NO` and web-only lists give nil.
     static func listPostAddress(_ value: String?) -> String? {
-        guard let value else { return nil }
-        for piece in value.split(separator: "<", omittingEmptySubsequences: false).dropFirst() {
-            guard let end = piece.firstIndex(of: ">") else { continue }
-            let link = piece[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
-            guard link.lowercased().hasPrefix("mailto:") else { continue }
+        for link in bracketedLinks(value) where link.lowercased().hasPrefix("mailto:") {
             let address = link.dropFirst("mailto:".count)
                 .split(separator: "?", maxSplits: 1).first.map(String.init)?
                 .removingPercentEncoding?
@@ -192,6 +192,17 @@ extension MailEnvelope {
             if let address, address.contains("@") { return address }
         }
         return nil
+    }
+
+    /// The links an RFC 2369 header lists, each in angle brackets, folding
+    /// whitespace removed.
+    static func bracketedLinks(_ value: String?) -> [String] {
+        guard let value else { return [] }
+        return value.split(separator: "<", omittingEmptySubsequences: false).dropFirst().compactMap { piece in
+            guard let end = piece.firstIndex(of: ">") else { return nil }
+            let link = piece[..<end].filter { !$0.isWhitespace }
+            return link.isEmpty ? nil : String(link)
+        }
     }
 }
 

@@ -29,7 +29,8 @@ extension MailEnvelope {
             partTypes: info.parts.map(\.contentType),
             listID: Self.listIdentity(info.additionalFields?["list-id"])?.id,
             listName: Self.listIdentity(info.additionalFields?["list-id"])?.name,
-            listPost: Self.listPostAddress(info.additionalFields?["list-post"])
+            listPost: Self.listPostAddress(info.additionalFields?["list-post"]),
+            unsubscribe: Self.bracketedLinks(info.additionalFields?["list-unsubscribe"])
         )
     }
 }

@@ -111,6 +111,9 @@ struct ConversationView: View {
     /// The sender awaiting block confirmation, set when "Block Sender" is chosen
     /// from the menu and cleared when the dialog resolves.
     @State private var pendingBlock: Participant?
+    /// The unsubscribe request awaiting confirmation, set when "Unsubscribe" is chosen.
+    @State private var pendingUnsubscribe: Unsubscribe?
+    @Environment(\.openURL) private var openURL
     /// The message the user chose to forward, presenting the forward composer;
     /// nil when no forward is in progress.
     @State private var forwardingMessage: Message?
@@ -167,7 +170,8 @@ struct ConversationView: View {
                 // first; the tapped result lands on a bubble.
                 onFind: { activeWeb = nil; isSearching = true },
                 blockSenderLabel: blockableSender?.label,
-                onBlock: { pendingBlock = blockableSender }
+                onBlock: { pendingBlock = blockableSender },
+                onUnsubscribe: unsubscribeRequest.map { request in { pendingUnsubscribe = request } }
             )
             Divider()
             if let thread {
@@ -234,6 +238,29 @@ struct ConversationView: View {
                 mode: .move(threadIDs: [summary.id]),
                 onMoved: onClose
             )
+        }
+        .confirmationDialog(
+            "Unsubscribe?",
+            isPresented: Binding(get: { pendingUnsubscribe != nil }, set: { if !$0 { pendingUnsubscribe = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingUnsubscribe
+        ) { request in
+            switch request {
+            case let .mail(to, subject, body):
+                Button("Send Request") {
+                    Task { _ = await model.sendNew(to: [Participant(address: to)], subject: subject, body: body) }
+                }
+            case let .web(url):
+                Button("Open \(url.host ?? "Page")") { openURL(url) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { request in
+            switch request {
+            case let .mail(to, _, _):
+                Text("Sends an unsubscribe request to \(to) from your account, like any message.")
+            case let .web(url):
+                Text("Opens the list's unsubscribe page at \(url.host ?? url.absoluteString) in your browser.")
+            }
         }
         .confirmationDialog(
             pendingBlock.map { "Block \($0.label)?" } ?? "Block Sender?",
@@ -583,6 +610,12 @@ struct ConversationView: View {
     /// The sender this conversation would block, from the loaded thread or, before
     /// it loads, the summary. Nil for a note-to-self thread, so the menu hides
     /// the item.
+    /// How to leave the list this conversation's mail came through, from the
+    /// newest message that offers a way.
+    private var unsubscribeRequest: Unsubscribe? {
+        thread?.messages.reversed().lazy.compactMap { Unsubscribe.request(from: $0.unsubscribe) }.first
+    }
+
     private var blockableSender: Participant? {
         thread?.blockableSender(as: model.account) ?? summary.blockableSender(as: model.account)
     }
@@ -666,6 +699,7 @@ private struct ConversationTopBar: View {
     /// note-to-self thread has no one to block).
     let blockSenderLabel: String?
     let onBlock: () -> Void
+    let onUnsubscribe: (() -> Void)?
 
     @State private var isTruncated = false
     @State private var showingFull = false
@@ -730,6 +764,11 @@ private struct ConversationTopBar: View {
                 }
                 Button(role: .destructive, action: onJunk) {
                     Label("Move to Junk", systemImage: "xmark.bin")
+                }
+                if let onUnsubscribe {
+                    Button(action: onUnsubscribe) {
+                        Label("Unsubscribe…", systemImage: "envelope.badge.minus")
+                    }
                 }
                 if let blockSenderLabel {
                     Button(role: .destructive, action: onBlock) {

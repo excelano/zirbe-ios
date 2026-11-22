@@ -69,6 +69,8 @@ public struct Message: Sendable, Hashable, Identifiable {
     public var media: MessageMedia
     /// The mailing list this message came through, when it carries a `List-Id`.
     public var mailingList: MailingList?
+    /// The links in the message's `List-Unsubscribe` header, in the order given.
+    public var unsubscribe: [String]
 
     public init(
         messageID: String? = nil,
@@ -89,7 +91,8 @@ public struct Message: Sendable, Hashable, Identifiable {
         invite: Invite? = nil,
         transcript: String? = nil,
         media: MessageMedia? = nil,
-        mailingList: MailingList? = nil
+        mailingList: MailingList? = nil,
+        unsubscribe: [String] = []
     ) {
         self.messageID = messageID
         self.uid = uid
@@ -110,6 +113,7 @@ public struct Message: Sendable, Hashable, Identifiable {
         self.transcript = transcript
         self.media = media ?? MessageMedia(mimeTypes: attachments.map(\.mimeType))
         self.mailingList = mailingList
+        self.unsubscribe = unsubscribe
     }
 
     /// Whether this message answers a meeting invitation (an attendee's accept,

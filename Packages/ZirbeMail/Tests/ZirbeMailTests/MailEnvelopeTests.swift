@@ -28,5 +28,13 @@ final class MailEnvelopeTests: XCTestCase {
         XCTAssertEqual(MailEnvelope.listPostAddress("<https://example.org/post>, <mailto:post@example.org>"), "post@example.org")
         XCTAssertNil(MailEnvelope.listPostAddress("NO"))
     }
+
+    func testUnsubscribeLinksAreReadInOrderWithFoldingRemoved() {
+        XCTAssertEqual(
+            MailEnvelope.bracketedLinks("<mailto:leave@example.com>,\r\n <https://example.com/u/\r\n 42>"),
+            ["mailto:leave@example.com", "https://example.com/u/42"]
+        )
+        XCTAssertEqual(MailEnvelope.bracketedLinks(nil), [])
+    }
 }
 
