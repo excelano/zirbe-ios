@@ -56,4 +56,38 @@ final class EngineHelperTests: XCTestCase {
         let referenced = MailEngine.referencedCIDs(in: #"<img src="cid:image001@01DA">"#)
         XCTAssertTrue(referenced.contains(MailEngine.normalizeCID("<IMAGE001@01DA>")))
     }
+
+    // MARK: Reactions from other clients
+
+    private func part(_ type: String, disposition: String? = nil, section: String = "1", text: String? = nil) -> MessagePart {
+        var part = MessagePart(sectionString: section, contentType: type, disposition: disposition, filename: nil, contentId: nil)
+        part.data = text.map { Data($0.utf8) }
+        return part
+    }
+
+    func testAStandardReactionIsTheFirstPartMarkedReaction() {
+        let single = part("text/plain; charset=utf-8", disposition: "reaction")
+        XCTAssertEqual(MailEngine.reactionPart(in: [single])?.section, single.section)
+
+        let first = part("text/plain", disposition: "REACTION", section: "1")
+        let comment = part("text/plain", section: "2")
+        XCTAssertEqual(MailEngine.reactionPart(in: [first, comment])?.section, first.section)
+
+        XCTAssertNil(MailEngine.reactionPart(in: [part("text/plain")]))
+        XCTAssertNil(MailEngine.reactionPart(in: [part("text/plain"), part("text/plain", disposition: "reaction", section: "2")]))
+        XCTAssertNil(MailEngine.reactionPart(in: [part("text/html", disposition: "reaction")]))
+    }
+
+    func testAGmailReactionPartIsFoundAnywhere() {
+        let gmail = part("text/vnd.google.email-reaction+json", section: "3")
+        XCTAssertEqual(MailEngine.reactionPart(in: [part("text/plain"), part("text/html", section: "2"), gmail])?.section, gmail.section)
+    }
+
+    func testTheEmojiIsReadFromEitherKindOfPart() {
+        XCTAssertEqual(MailEngine.reactionText(of: part("text/plain", disposition: "reaction", text: "\u{1F44D}\r\n")), "\u{1F44D}")
+        XCTAssertEqual(MailEngine.reactionText(of: part("text/plain", disposition: "reaction", text: "\r\n")), "")
+        let json = #"{"emoji":"\u2764\ufe0f","version":1}"#
+        XCTAssertEqual(MailEngine.reactionText(of: part("text/vnd.google.email-reaction+json", text: json)), "\u{2764}\u{FE0F}")
+    }
 }
+

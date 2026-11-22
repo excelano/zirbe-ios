@@ -91,7 +91,9 @@ public struct OutgoingDraft: Sendable, Hashable {
             references: references,
             messageID: messageID,
             attachments: attachments,
-            headers: reaction.map { [MailHeader.zirbeReaction: $0] } ?? [:]
+            headers: reaction.map {
+                [MailHeader.zirbeReaction: $0, MailHeader.contentDisposition: "reaction"]
+            } ?? [:]
         )
     }
 
@@ -183,10 +185,12 @@ extension OutgoingDraft {
         )
     }
 
-    /// A reaction (tapback) to `target` within `thread`, sent as `account`. It
-    /// carries the emoji as the `X-Zirbe-Reaction` header so a receiving Zirbe
-    /// renders a badge, and a readable body ("Reacted 👍 to '…'") so any other
-    /// client shows a sensible line instead. Threading points `In-Reply-To` at
+    /// A reaction (tapback) to `target` within `thread`, sent as `account`, in
+    /// the RFC 9078 form: a single `text/plain` body holding only the emoji,
+    /// marked `Content-Disposition: reaction`, which clients that support
+    /// standard reactions (the desktop app, Delta Chat) show as a badge. It also
+    /// carries the emoji as the `X-Zirbe-Reaction` header, which earlier versions
+    /// of both Zirbe apps read. Threading points `In-Reply-To` at
     /// the reacted-to message specifically (not the thread's latest), so the
     /// badge lands on the right bubble; recipients are the thread's reply-all set,
     /// so in a group everyone sees the reaction. The caller guarantees `target`
@@ -207,7 +211,7 @@ extension OutgoingDraft {
             to: to,
             cc: cc,
             subject: ReplyBuilder.replySubject(for: thread),
-            body: ReactionText.body(emoji: emoji, target: target),
+            body: emoji,
             inReplyTo: targetID.isEmpty ? nil : targetID,
             references: references,
             messageID: ReplyBuilder.generateMessageID(for: account),

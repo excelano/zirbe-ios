@@ -56,6 +56,9 @@ do {
         if let inReplyTo = envelope.inReplyTo {
             print("  in-reply-to: \(inReplyTo)")
         }
+        if let reaction = envelope.reaction {
+            print("  reaction:    \(reaction.isEmpty ? "(withdrawn)" : reaction)")
+        }
         if !envelope.references.isEmpty {
             print("  references:  \(envelope.references.count) (\(envelope.references.last ?? ""))")
         }

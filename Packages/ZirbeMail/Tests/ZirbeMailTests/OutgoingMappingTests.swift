@@ -133,4 +133,15 @@ final class OutgoingMappingTests: XCTestCase {
         XCTAssertEqual(email.recipients.first?.name, "A")
         XCTAssertNil(email.ccRecipients.first?.name)
     }
+
+    func testAReactionSerializesAsASinglePartStandardReaction() {
+        let email = Email(message(headers: [MailHeader.zirbeReaction: "👍", MailHeader.contentDisposition: "reaction"]))
+        let content = email.constructContent()
+        let head = headerBlock(of: email)
+        XCTAssertTrue(head.contains("Content-Disposition: reaction"))
+        XCTAssertTrue(head.contains("Content-Type: text/plain"))
+        XCTAssertFalse(head.contains("multipart"))
+        XCTAssertTrue(content.contains("X-Zirbe-Reaction"))
+    }
 }
+

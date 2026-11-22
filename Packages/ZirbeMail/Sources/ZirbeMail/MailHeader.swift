@@ -11,8 +11,13 @@
 /// as plain mail.
 public enum MailHeader {
     /// Carries a reaction (tapback) emoji on a message that reacts to another.
-    /// A receiving Zirbe renders it as a badge on the reacted-to bubble; other
-    /// clients fall back to the message's readable body. Header keys arrive
+    /// A receiving Zirbe renders it as a badge on the reacted-to bubble, and so
+    /// do earlier versions that predate standard reactions. Header keys arrive
     /// lowercased from the parser, so read incoming values by `lowercased()`.
     public static let zirbeReaction = "X-Zirbe-Reaction"
+
+    /// Marks a reaction's body as one under RFC 9078: on a single-part message
+    /// this top-level field is the text part's own disposition, so any client
+    /// that supports standard reactions reads the body's emoji as a reaction.
+    public static let contentDisposition = "Content-Disposition"
 }

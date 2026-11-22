@@ -97,7 +97,7 @@ public actor MailEngine {
             self.logger.debug("selected \(mailbox): \(selection.messageCount) message(s)")
             guard let identifiers = selection.latest(limit) else { return [] }
             let infos = try await self.server.fetchMessageInfosBulk(using: identifiers)
-            return infos.map(MailEnvelope.init)
+            return try await self.envelopesReadingReactions(infos)
         }
     }
 
@@ -127,7 +127,7 @@ public actor MailEngine {
             let newest = matches.sorted { $0.value < $1.value }.suffix(limit)
             guard !newest.isEmpty else { return [] }
             let infos = try await self.server.fetchMessageInfosBulk(using: UIDSet(Array(newest)))
-            return infos.map(MailEnvelope.init)
+            return try await self.envelopesReadingReactions(infos)
         }
     }
 
@@ -641,6 +641,54 @@ public actor MailEngine {
 
     /// The first text leaf of `type` (e.g. `text/plain`), skipping anything
     /// marked as an attachment.
+    /// Envelopes for fetched message infos, with each reaction read. The
+    /// `X-Zirbe-Reaction` header arrives with the envelope; a reaction from
+    /// another client carries its emoji in a body part instead (RFC 9078, or
+    /// Gmail's own JSON part), so those small parts are downloaded in one
+    /// pipelined burst. Only replies whose structure shows such a part pay for it.
+    private func envelopesReadingReactions(_ infos: [MessageInfo]) async throws -> [MailEnvelope] {
+        var envelopes = infos.map(MailEnvelope.init)
+        var wanted: [(index: Int, uid: UID, part: MessagePart)] = []
+        for (index, info) in infos.enumerated() where envelopes[index].reaction == nil && info.inReplyTo != nil {
+            guard let uid = info.uid, let part = Self.reactionPart(in: info.parts) else { continue }
+            wanted.append((index, uid, part))
+        }
+        guard !wanted.isEmpty else { return envelopes }
+        let fetched = try await server.fetchPartsPipelined(parts: wanted.map { ($0.uid, $0.part.section) })
+        for want in wanted {
+            guard let data = fetched[want.uid]?.first(where: { $0.section == want.part.section })?.data else { continue }
+            var filled = want.part
+            filled.data = data
+            envelopes[want.index].reaction = Self.reactionText(of: filled)
+        }
+        return envelopes
+    }
+
+    /// A message's reaction part, from its body structure: an RFC 9078
+    /// `text/plain` part marked `Content-Disposition: reaction` as its first
+    /// part, or Gmail's `text/vnd.google.email-reaction+json` part.
+    static func reactionPart(in parts: [MessagePart]) -> MessagePart? {
+        if let first = parts.first,
+           first.disposition?.lowercased() == "reaction",
+           first.contentType.lowercased().hasPrefix("text/plain") {
+            return first
+        }
+        return parts.first { $0.contentType.lowercased().hasPrefix(Self.gmailReactionType) }
+    }
+
+    /// The emoji a downloaded reaction part carries. An RFC 9078 part holding
+    /// nothing withdraws the sender's earlier reaction, so it reads as empty.
+    static func reactionText(of part: MessagePart) -> String? {
+        guard let text = part.textContent else { return nil }
+        if part.contentType.lowercased().hasPrefix(Self.gmailReactionType) {
+            let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any]
+            return object?["emoji"] as? String
+        }
+        return text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    private static let gmailReactionType = "text/vnd.google.email-reaction+json"
+
     static func textLeaf(in parts: [MessagePart], type: String) -> MessagePart? {
         parts.first {
             $0.contentType.lowercased().hasPrefix(type) && $0.disposition?.lowercased() != "attachment"

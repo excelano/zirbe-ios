@@ -93,7 +93,8 @@ public struct Thread: Sendable, Hashable, Identifiable {
     /// The reactions on each message, keyed by the target message's `Message-ID`
     /// (the id a reaction names in its `In-Reply-To`). At most one reaction per
     /// reactor per message: when a reactor's reaction appears more than once, the
-    /// latest by date wins, so a change replaces rather than stacks.
+    /// latest by date wins, so a change replaces rather than stacks, and an empty
+    /// one withdraws the reactor's reaction.
     public var reactionsByTarget: [String: [Reaction]] {
         var byReactor: [String: [String: Reaction]] = [:]
         for message in messages {
@@ -108,7 +109,9 @@ public struct Thread: Sendable, Hashable, Identifiable {
             }
             byReactor[target, default: [:]][from.address] = candidate
         }
-        return byReactor.mapValues { Array($0.values) }
+        return byReactor
+            .mapValues { $0.values.filter { !$0.emoji.isEmpty } }
+            .filter { !$0.value.isEmpty }
     }
 
     /// The reactions on one message, by its `Message-ID`, or an empty list when it

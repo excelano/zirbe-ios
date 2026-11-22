@@ -78,12 +78,12 @@ final class ReactionTests: XCTestCase {
         XCTAssertTrue(draft.localMessage.isReaction)
     }
 
-    func testReactionBodyDegradesReadablyForOtherClients() {
+    func testReactionIsAStandardReactionWithTheEmojiAsItsBody() {
         let t = thread(bodyText: "the question")
         let draft = OutgoingDraft.reaction(to: t.messages[0], in: t, as: account(), emoji: "👍")
-        // A client that ignores the header still shows a sensible line.
-        XCTAssertTrue(draft.body.hasPrefix("Reacted 👍 to "))
-        XCTAssertTrue(draft.body.contains("the question"))
+        // RFC 9078: the body is the emoji alone, marked as a reaction.
+        XCTAssertEqual(draft.body, "👍")
+        XCTAssertEqual(draft.outgoingMessage.headers[MailHeader.contentDisposition], "reaction")
     }
 
     func testEnvelopeReactionHeaderMapsIntoTheMessage() {
@@ -97,25 +97,19 @@ final class ReactionTests: XCTestCase {
         XCTAssertEqual(m.inReplyTo, "<a@x>")
     }
 
-    // MARK: - Degrade body
-
-    func testDegradeBodyFallsBackToSubjectThenBare() {
-        let noBody = Message(messageID: "<b@x>", subject: "Lunch", from: participant("p@x.com"), bodyText: nil)
-        XCTAssertEqual(ReactionText.body(emoji: "👍", target: noBody), "Reacted 👍 to \u{201C}Lunch\u{201D}")
-
-        let nothing = Message(messageID: "<c@x>", subject: nil, from: participant("p@x.com"), bodyText: nil)
-        XCTAssertEqual(ReactionText.body(emoji: "👍", target: nothing), "Reacted 👍")
-    }
-
-    func testDegradeBodyTruncatesALongExcerpt() {
-        let long = "This is a really long message body that should be truncated for the reaction excerpt line"
-        let m = Message(messageID: "<d@x>", from: participant("p@x.com"), bodyText: long)
-        let body = ReactionText.body(emoji: "❤️", target: m)
-        XCTAssertTrue(body.hasSuffix("\u{2026}\u{201D}")) // ends with an ellipsis inside the closing quote
-        XCTAssertLessThan(body.count, long.count)
-    }
-
     // MARK: - Thread aggregation
+
+    func testAnEmptyReactionWithdrawsTheReactorsEarlierOne() {
+        var t = thread()
+        t.messages.append(reactionMessage(id: "<r1@x>", target: "<a@x>", emoji: "👍", from: "pat@x.com", at: 10))
+        t.messages.append(reactionMessage(id: "<r2@x>", target: "<a@x>", emoji: "❤️", from: "sam@x.com", at: 20))
+        t.messages.append(reactionMessage(id: "<r3@x>", target: "<a@x>", emoji: "", from: "pat@x.com", at: 30))
+        XCTAssertEqual(t.reactions(forMessageID: "<a@x>").map(\.reactor.address), ["sam@x.com"])
+
+        t.messages.append(reactionMessage(id: "<r4@x>", target: "<a@x>", emoji: "", from: "sam@x.com", at: 40))
+        XCTAssertTrue(t.reactions(forMessageID: "<a@x>").isEmpty)
+        XCTAssertNil(t.reactionsByTarget["<a@x>"])
+    }
 
     func testReactionsGroupByTargetAndLatestPerReactorWins() {
         var t = thread()
