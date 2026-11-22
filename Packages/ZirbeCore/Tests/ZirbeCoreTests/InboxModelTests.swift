@@ -269,6 +269,29 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(updated?.conversationMessages.count, 1, "a reaction is a badge, not a bubble")
     }
 
+    func testAFailedReplyOutlivesARelaunchAndGoesOnTheNextSync() async throws {
+        let thread = try await signInWithPlan()
+        await sender.failNext()
+        let failed = await model.sendReply(to: thread, body: "See you there")
+        let held = try XCTUnwrap(failed?.messages.last { $0.didFailToSend }?.messageID)
+
+        // A relaunch: a new model over the same store, with the sender working again.
+        let relaunched = InboxModel(account: account, store: store,
+                                    sync: SyncService(account: account, store: store, engine: server, sender: sender))
+        await relaunched.resume(password: "pw")
+        XCTAssertTrue(relaunched.canRetry(messageID: held), "the held reply survives the relaunch")
+
+        await relaunched.refresh()
+
+        let delivered = await sender.sent.map(\.messageID)
+        XCTAssertEqual(delivered, [held])
+        XCTAssertFalse(relaunched.canRetry(messageID: held))
+        let remaining = try await store.heldForRetry(accountID: account.id)
+        XCTAssertTrue(remaining.isEmpty)
+        let reloaded = try await store.thread(id: thread.id, accountID: account.id)
+        XCTAssertEqual(reloaded?.messages.last?.sendState, .sent)
+    }
+
     func testRefusedReactionSurfacesAnErrorAndChangesNothing() async throws {
         let thread = try await signInWithPlan()
         await sender.failNext()

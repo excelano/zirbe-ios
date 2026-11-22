@@ -1053,6 +1053,40 @@ public final class MailStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Outbox
+
+    /// Keep a reply whose send failed, so its Retry survives a relaunch and the
+    /// next sync can try it again. Keyed by its Message-ID, so holding it twice
+    /// replaces the earlier copy.
+    public func holdForRetry(_ draft: OutgoingDraft, accountID: String) async throws {
+        let data = try JSONEncoder().encode(draft)
+        try await database.write { db in
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO outbox (accountID, messageID, draft) VALUES (?, ?, ?)",
+                arguments: [accountID, draft.messageID, data]
+            )
+        }
+    }
+
+    /// Drop a held reply once it has gone.
+    public func releaseFromRetry(messageID: String, accountID: String) async throws {
+        try await database.write { db in
+            try db.execute(
+                sql: "DELETE FROM outbox WHERE accountID = ? AND messageID = ?",
+                arguments: [accountID, messageID]
+            )
+        }
+    }
+
+    /// The replies held for retry, oldest first.
+    public func heldForRetry(accountID: String) async throws -> [OutgoingDraft] {
+        try await database.read { db in
+            try Data.fetchAll(db, sql: "SELECT draft FROM outbox WHERE accountID = ?", arguments: [accountID])
+                .compactMap { try? JSONDecoder().decode(OutgoingDraft.self, from: $0) }
+                .sorted { $0.date < $1.date }
+        }
+    }
+
     // MARK: Reads
 
     /// The inbox: thread summaries for an account, pinned conversations first and
@@ -1714,6 +1748,14 @@ public final class MailStore: @unchecked Sendable {
         migrator.registerMigration("v28-message-unsubscribe") { db in
             try db.alter(table: "message") { t in
                 t.add(column: "unsubscribe", .text)
+            }
+        }
+        migrator.registerMigration("v29-outbox") { db in
+            try db.create(table: "outbox") { t in
+                t.column("accountID", .text).notNull()
+                t.column("messageID", .text).notNull()
+                t.column("draft", .blob).notNull()
+                t.primaryKey(["accountID", "messageID"])
             }
         }
         return migrator

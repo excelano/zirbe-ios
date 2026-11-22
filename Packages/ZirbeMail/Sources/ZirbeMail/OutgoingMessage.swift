@@ -74,7 +74,7 @@ public struct OutgoingMessage: Sendable, Hashable {
 /// type so the send path doesn't depend on SwiftMail's `Attachment`; the mapping
 /// to that lives in OutgoingMapping. Forwarded attachments are always regular
 /// (not inline), so there is no content-ID or inline flag here.
-public struct OutgoingAttachment: Sendable, Hashable {
+public struct OutgoingAttachment: Sendable, Hashable, Codable {
     public var filename: String
     public var mimeType: String
     public var data: Data

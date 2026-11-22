@@ -17,7 +17,7 @@ import ZirbeMail
 /// A message the user has composed and is about to send. Build it with `reply`
 /// or `new`; the send orchestration turns it into an SMTP send plus an
 /// optimistic local insert.
-public struct OutgoingDraft: Sendable, Hashable {
+public struct OutgoingDraft: Sendable, Hashable, Codable {
     public var from: Participant
     public var to: [Participant]
     public var cc: [Participant]

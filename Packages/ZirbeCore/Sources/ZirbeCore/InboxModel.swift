@@ -49,10 +49,9 @@ public final class InboxModel {
 
     /// Replies whose SMTP send failed, kept so the user can retry them verbatim —
     /// same recipients, body, attachments, and Message-ID — by tapping the failed
-    /// bubble. Keyed by that Message-ID. An entry is added when a send fails and
-    /// dropped once it finally goes through. Held in memory only: a retry is a
-    /// same-session action, so a failed bubble left by a relaunch shows "Not
-    /// Delivered" without a retry, and the user composes again.
+    /// bubble, and so each sync tries them again on its own. Keyed by that
+    /// Message-ID. Mirrored in the store's outbox, so a relaunch keeps them; an
+    /// entry is dropped once it finally goes through.
     private var pendingReplies: [String: OutgoingDraft] = [:]
 
     /// Whether a gated operation — a sync or a mutation — currently holds the
@@ -200,6 +199,7 @@ public final class InboxModel {
     /// once it is on screen.
     public func resume(login: MailLogin) async {
         self.login = login
+        await loadHeldReplies()
         await loadCached()
     }
 
@@ -217,6 +217,7 @@ public final class InboxModel {
 
     public func signIn(login: MailLogin) async throws {
         self.login = login
+        await loadHeldReplies()
         isSyncing = true
         defer { isSyncing = false }
         do {
@@ -266,12 +267,36 @@ public final class InboxModel {
             try await reloadList()
         }
         hasSynced = true
+        await retryHeldReplies(login: login)
         // The user is present for a foreground sync (a refresh, or the IDLE watch
         // firing), so anything now in the inbox counts as already seen: advance the
         // notification mark past it, leaving the background poll to notify only for
         // mail that lands while the app is away. Also seeds the mark on the first
         // sync after connecting, so a returning inbox isn't announced wholesale.
         try await store.markNotificationWatermark(accountID: account.id)
+    }
+
+    /// Bring back the replies held from an earlier session, so their failed
+    /// bubbles can be retried.
+    private func loadHeldReplies() async {
+        let held = (try? await store.heldForRetry(accountID: account.id)) ?? []
+        for draft in held { pendingReplies[draft.messageID] = draft }
+    }
+
+    /// Try each held reply again after a sync. One that goes through flips its
+    /// bubble to sent and leaves the outbox; one that still fails stays for the
+    /// next sync or a tap on Retry.
+    private func retryHeldReplies(login: MailLogin) async {
+        var delivered = false
+        for draft in pendingReplies.values.sorted(by: { $0.date < $1.date }) {
+            guard (try? await sync.transmit(draft, login: login)) != nil else { continue }
+            try? await sync.recordLocal(draft, state: .sent)
+            pendingReplies[draft.messageID] = nil
+            try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
+            await sync.saveSentCopy(draft, login: login)
+            delivered = true
+        }
+        if delivered { try? await reloadList() }
     }
 
     /// Load the cached folder list immediately (no network), for opening the
@@ -493,11 +518,13 @@ public final class InboxModel {
             // is left untouched: setting it here would also surface in the next
             // compose or forward sheet, which reads the same property.
             pendingReplies[draft.messageID] = draft
+            try? await store.holdForRetry(draft, accountID: account.id)
             try? await sync.recordLocal(draft, state: .failed)
             return try? await store.thread(id: threadID, accountID: account.id)
         }
         try? await sync.recordLocal(draft, state: .sent)
         pendingReplies[draft.messageID] = nil
+        try? await store.releaseFromRetry(messageID: draft.messageID, accountID: account.id)
         errorMessage = nil
         await sync.saveSentCopy(draft, login: login)
         return try? await store.thread(id: threadID, accountID: account.id)
