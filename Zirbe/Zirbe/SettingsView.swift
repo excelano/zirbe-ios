@@ -21,6 +21,8 @@ enum SettingsKeys {
     /// Post a banner when a background check finds new mail. Defaults on; the
     /// notifier reads the same key and treats an unset value as on.
     static let newMailNotifications = "settings.newMailNotifications"
+    /// Seconds a sent reply waits with an Undo before it goes; 0 sends at once.
+    static let undoSendSeconds = "settings.undoSendSeconds"
     /// How many lines of each message to preview in the inbox row (0 = none).
     /// Defaults to 2; the inbox row reads the same key.
     static let previewLineCount = "settings.previewLineCount"
@@ -40,6 +42,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.trustedImageSenders) private var trustedImageSenders = ""
     @AppStorage(SettingsKeys.newMailNotifications) private var newMailNotifications = true
     @AppStorage(SettingsKeys.previewLineCount) private var previewLineCount = 2
+    @AppStorage(SettingsKeys.undoSendSeconds) private var undoSendSeconds = 0
     #if DEBUG
     @AppStorage(DemoMode.userDefaultsKey) private var demoMode = false
     #endif
@@ -94,6 +97,17 @@ struct SettingsView: View {
                     Text("Inbox")
                 } footer: {
                     Text("How many lines of each message to preview under the subject.")
+                }
+
+                Section {
+                    Picker("Undo Send", selection: $undoSendSeconds) {
+                        Text("Off").tag(0)
+                        Text("5 seconds").tag(5)
+                        Text("10 seconds").tag(10)
+                        Text("20 seconds").tag(20)
+                    }
+                } footer: {
+                    Text("A reply waits this long after Send, with an Undo that puts it back in the reply bar.")
                 }
 
                 Section {

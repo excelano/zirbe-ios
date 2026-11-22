@@ -104,6 +104,11 @@ struct ConversationView: View {
     /// Attendees' answers to a meeting, grouped under the bubble each followed.
     @State private var inviteResponses: [String: [InviteResponse]] = [:]
     @State private var isSending = false
+    @AppStorage(SettingsKeys.undoSendSeconds) private var undoSendSeconds = 0
+    /// A reply waiting out the undo delay, and the task that sends it when the
+    /// delay ends. Undo cancels the task and puts the reply back in the bar.
+    @State private var heldReply: (taken: ReplyComposer<StagedAttachment>, until: Date)?
+    @State private var heldReplyTask: Task<Void, Never>?
     @State private var removedAddresses: Set<String> = []
     @State private var showRecipients = false
     /// Presents the move-destination picker for this conversation.
@@ -199,6 +204,22 @@ struct ConversationView: View {
                             onJump: { jump(to: $0) }
                         )
                     }
+                }
+                if let held = heldReply {
+                    Divider()
+                    HStack {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let left = max(1, Int(held.until.timeIntervalSince(context.date).rounded(.up)))
+                            Text("Sending in \(left)s")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Undo", action: undoHeldReply)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
                 }
                 if !isSearching {
                     Divider()
@@ -661,6 +682,30 @@ struct ConversationView: View {
     /// puts the draft back so nothing typed is lost.
     private func send(into thread: ZirbeCore.Thread) {
         let taken = draft.composer.take()
+        guard undoSendSeconds > 0 else {
+            deliver(taken, into: thread)
+            return
+        }
+        let delay = TimeInterval(undoSendSeconds)
+        heldReply = (taken, Date().addingTimeInterval(delay))
+        heldReplyTask = Task {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            heldReply = nil
+            deliver(taken, into: thread)
+        }
+    }
+
+    /// Take back a reply still waiting out the undo delay: it goes back in the bar
+    /// and is not sent.
+    private func undoHeldReply() {
+        heldReplyTask?.cancel()
+        heldReplyTask = nil
+        if let held = heldReply { draft.composer.restore(held.taken) }
+        heldReply = nil
+    }
+
+    private func deliver(_ taken: ReplyComposer<StagedAttachment>, into thread: ZirbeCore.Thread) {
         isSending = true
         Task {
             let updated = await model.sendReply(
