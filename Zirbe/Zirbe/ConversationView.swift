@@ -104,6 +104,10 @@ struct ConversationView: View {
     /// Attendees' answers to a meeting, grouped under the bubble each followed.
     @State private var inviteResponses: [String: [InviteResponse]] = [:]
     @State private var isSending = false
+    /// Unread bubbles that have come into view, collected for a moment so a
+    /// scroll marks them read in one round trip.
+    @State private var seenBubbles: [Message] = []
+    @State private var seenTask: Task<Void, Never>?
     @AppStorage(SettingsKeys.undoSendSeconds) private var undoSendSeconds = 0
     /// A reply waiting out the undo delay, and the task that sends it when the
     /// delay ends. Undo cancels the task and puts the reply back in the bar.
@@ -325,7 +329,7 @@ struct ConversationView: View {
             isLoading = false
             if let loaded {
                 isFlagged = loaded.isFlagged
-                await model.markReadOnOpen(loaded)
+                await model.markSeen(loaded.messages.filter(\.isReaction))
             }
         }
         // A pending reaction's undo window is a courtesy, not a way to silently
@@ -455,6 +459,7 @@ struct ConversationView: View {
                                 }
                             }
                         }
+                        .onAppear { noteSeen(row.message, isOwn: row.isOwn) }
                     }
                 }
                 .padding()
@@ -693,6 +698,23 @@ struct ConversationView: View {
             guard !Task.isCancelled else { return }
             heldReply = nil
             deliver(taken, into: thread)
+        }
+    }
+
+    /// Collect an unread bubble that came into view while Zirbe is in front, and
+    /// mark what has been collected read after a short pause.
+    private func noteSeen(_ message: Message, isOwn: Bool) {
+        guard !isOwn, !message.isSeen, scenePhase == .active,
+              !seenBubbles.contains(where: { $0.id == message.id })
+        else { return }
+        seenBubbles.append(message)
+        seenTask?.cancel()
+        seenTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            let seen = seenBubbles
+            seenBubbles = []
+            await model.markSeen(seen)
         }
     }
 

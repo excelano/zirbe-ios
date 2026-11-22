@@ -400,6 +400,25 @@ public actor SyncService {
         try await store.rethread(accountID: account.id)
     }
 
+    /// Mark individual messages read, on the server and locally, for a
+    /// conversation read message by message as each comes into view.
+    public func markSeen(messageIDs: [String], login: MailLogin) async throws {
+        var refs: [(id: String, uid: UInt32, mailbox: String)] = []
+        for id in messageIDs {
+            if let ref = try await store.messageRef(id: id, accountID: account.id) {
+                refs.append((id, ref.uid, ref.mailbox))
+            }
+        }
+        if !refs.isEmpty {
+            try await engine.connect(username: account.username, login: login)
+            for (mailbox, group) in Dictionary(grouping: refs, by: \.mailbox) {
+                try await engine.setSeen(true, in: mailbox, uids: group.map(\.uid))
+            }
+        }
+        try await store.setSeen(true, messageIDs: messageIDs, accountID: account.id)
+        try await store.rethread(accountID: account.id)
+    }
+
     /// Flag or unflag conversations, mirroring `setRead`.
     public func setFlagged(threadIDs: [String], flagged: Bool, login: MailLogin) async throws {
         try await applyToServer(threadIDs: threadIDs, login: login) { mailbox, uids in

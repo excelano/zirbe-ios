@@ -477,18 +477,32 @@ final class InboxModelTests: XCTestCase {
 
     // MARK: Read, flag, pin
 
-    func testOpeningAnUnreadConversationMarksItReadOnce() async throws {
+    func testSeeingAConversationsMessagesMarksThemReadOnce() async throws {
         let thread = try await signInWithPlan()
         XCTAssertTrue(thread.isUnread)
 
-        await model.markReadOnOpen(thread)
+        await model.markSeen(thread.messages)
         XCTAssertEqual(model.summaries.first?.isUnread, false)
         XCTAssertNil(model.unreadCounts["INBOX"], "a folder with nothing unread carries no badge entry")
 
         let reopened = try await openFirstConversation()
-        await model.markReadOnOpen(reopened)
+        await model.markSeen(reopened.messages)
         let seenCalls = await server.calls(.setSeen)
         XCTAssertEqual(seenCalls.count, 1, "already-read mail costs no round trip")
+    }
+
+    func testSeeingOneMessageLeavesTheRestUnread() async throws {
+        await server.add(incoming("Plan", id: "<a@x>", minutes: 1))
+        await server.add(incoming("Re: Plan", id: "<b@x>", inReplyTo: "<a@x>", minutes: 2))
+        try await model.signIn(password: "pw")
+        let thread = try await openFirstConversation()
+        XCTAssertEqual(thread.messages.filter { !$0.isSeen }.count, 2)
+
+        await model.markSeen([thread.messages[0]])
+
+        let reloaded = try await openFirstConversation()
+        XCTAssertEqual(reloaded.messages.map(\.isSeen), [true, false])
+        XCTAssertEqual(model.summaries.first?.isUnread, true)
     }
 
     func testMarkUnreadAndFlagReflectInTheRows() async throws {

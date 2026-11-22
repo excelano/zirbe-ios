@@ -688,6 +688,23 @@ public final class MailStore: @unchecked Sendable {
         try await setFlag(.seen, seen, threadIDs: threadIDs, accountID: accountID)
     }
 
+    /// Set or clear `\Seen` on the given messages alone, by message id, so a
+    /// conversation can be read message by message as each comes into view.
+    public func setSeen(_ seen: Bool, messageIDs: [String], accountID: String) async throws {
+        guard !messageIDs.isEmpty else { return }
+        try await database.write { db in
+            let rows = try MessageRow
+                .filter(Column("accountID") == accountID && messageIDs.contains(Column("id")))
+                .fetchAll(db)
+            for var row in rows {
+                var flags = Set(row.flags)
+                if seen { flags.insert(.seen) } else { flags.remove(.seen) }
+                row.flags = Array(flags)
+                try row.save(db)
+            }
+        }
+    }
+
     /// Set or clear the `\Flagged` flag on every message in the given threads,
     /// locally, mirroring `setSeen`.
     public func setFlagged(_ flagged: Bool, threadIDs: [String], accountID: String) async throws {

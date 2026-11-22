@@ -770,12 +770,19 @@ public final class InboxModel {
         await markRead(threadIDs: [threadID], read: read)
     }
 
-    /// Mark a conversation read once it has been opened, but only when it is
-    /// currently unread, so opening clears the inbox dot without a needless
-    /// server round trip on already-read mail.
-    public func markReadOnOpen(_ thread: Thread) async {
-        guard thread.isUnread else { return }
-        await markRead(threadID: thread.id, read: true)
+    /// Mark messages read as the user sees them: a bubble once it has come into
+    /// view, and a conversation's reactions once it is open, since they show as
+    /// badges rather than bubbles. Messages already read cost no round trip.
+    public func markSeen(_ messages: [Message]) async {
+        guard let login else { return }
+        let ids = messages.filter { !$0.isSeen }.map(\.id)
+        guard !ids.isEmpty else { return }
+        await attempt {
+            try await self.exclusively {
+                try await self.sync.markSeen(messageIDs: ids, login: login)
+                try await self.reloadList()
+            }
+        }
     }
 
     /// Flag or unflag one or more conversations, reflecting each on the server
