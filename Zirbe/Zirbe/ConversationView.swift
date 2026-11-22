@@ -122,6 +122,7 @@ struct ConversationView: View {
     @State private var pendingBlock: Participant?
     /// The unsubscribe request awaiting confirmation, set when "Unsubscribe" is chosen.
     @State private var pendingUnsubscribe: Unsubscribe?
+    @State private var pendingLink: LinkCheck?
     @Environment(\.openURL) private var openURL
     /// The message the user chose to forward, presenting the forward composer;
     /// nil when no forward is in progress.
@@ -602,10 +603,38 @@ struct ConversationView: View {
                         )
                     }
                 ),
-                allowRemoteContent: active.showImages
+                allowRemoteContent: active.showImages,
+                onLink: follow
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .confirmationDialog(
+                pendingLink?.host ?? "Open Link?",
+                isPresented: Binding(get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingLink
+            ) { link in
+                Button("Open") { openURL(link.address) }
+                if let cleaned = link.cleaned {
+                    Button("Open Without Tracking") { openURL(cleaned) }
+                }
+                Button("Copy Address") { UIPasteboard.general.string = link.address.absoluteString }
+                Button("Cancel", role: .cancel) {}
+            } message: { link in
+                Text((link.warnings + [link.address.absoluteString]).joined(separator: "\n\n"))
+            }
             .id(active.messageID)
+        }
+    }
+
+    private func follow(_ link: EmailLink) {
+        guard let checked = LinkCheck(url: link.url, text: link.text) else {
+            openURL(link.url)
+            return
+        }
+        if checked.warnings.isEmpty {
+            openURL(checked.address)
+        } else {
+            pendingLink = checked
         }
     }
 
