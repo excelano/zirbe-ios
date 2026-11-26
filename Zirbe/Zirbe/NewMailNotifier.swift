@@ -51,12 +51,13 @@ final class NewMailNotifier: NSObject, ObservableObject, UNUserNotificationCente
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
     }
 
-    /// Post for the arrivals a background poll found, and set the app badge to the
-    /// inbox unread count. A no-op when the user has turned notifications off or
-    /// hasn't granted them. Arrivals the user's rules and conversation alerts
-    /// exclude are dropped first. A small run posts one banner each; a larger one
-    /// collapses to a single summary (NewMailNotification.plan).
-    func post(_ arrivals: [NewMailItem], badgeCount: Int) async {
+    /// Post for the arrivals a background poll found, and set the app badge from
+    /// the inbox's `unread` messages. Nothing posts when the user has turned
+    /// notifications off or hasn't granted them. Arrivals the user's rules and
+    /// conversation alerts exclude are dropped first. A small run posts one banner
+    /// each; a larger one collapses to a single summary (NewMailNotification.plan).
+    func post(_ arrivals: [NewMailItem], unread: [NewMailItem]) async {
+        await updateBadge(unread: unread)
         guard !arrivals.isEmpty, notificationsEnabled else { return }
         let center = UNUserNotificationCenter.current()
         guard await center.notificationSettings().authorizationStatus == .authorized else { return }
@@ -64,17 +65,17 @@ final class NewMailNotifier: NSObject, ObservableObject, UNUserNotificationCente
         for request in requests(for: NewMailNotification.plan(for: arrivals, rules: rules)) {
             try? await center.add(request)
         }
-        try? await center.setBadgeCount(badgeCount)
     }
 
-    /// Set the app icon badge to the inbox's current unread count. The background
-    /// poll sets the badge when it finds mail, but nothing else would, so the count
-    /// would freeze at the last poll's number once the user opened the app and read
-    /// their inbox. The app drives this from the unread count it already tracks, so
-    /// the badge follows what's actually unread (dropping to zero when the inbox is
-    /// cleared) rather than going stale. A no-op without the badge authorization.
-    func updateBadge(unreadCount: Int) async {
-        try? await UNUserNotificationCenter.current().setBadgeCount(unreadCount)
+    /// Set the app icon badge to the `unread` inbox messages the notification
+    /// rules would let notify, and to nothing while notifications are off: the
+    /// badge is a notification shown outside the app (zirbe-desktop's
+    /// CONVERSATIONS.md § Notifications). The app calls this whenever its unread
+    /// mail or the settings change, so the badge never freezes at the last
+    /// poll's number. A no-op without the badge authorization.
+    func updateBadge(unread: [NewMailItem]) async {
+        let count = notificationsEnabled ? unread.filter(rules.notifies).count : 0
+        try? await UNUserNotificationCenter.current().setBadgeCount(count)
     }
 
     /// Whether the user's "New mail notifications" toggle is on. Defaults on when

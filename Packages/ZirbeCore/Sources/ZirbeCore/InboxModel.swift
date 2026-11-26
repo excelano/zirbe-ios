@@ -33,6 +33,9 @@ public final class InboxModel {
     /// Per-folder unread badge counts, keyed by mailbox name, from the local
     /// cache; a folder not yet visited has no entry. See `MailStore.unreadCounts`.
     public private(set) var unreadCounts: [String: Int] = [:]
+    /// The unseen INBOX messages, for the app badge to judge by the notification
+    /// rules. See `MailStore.unreadInboxItems`.
+    public private(set) var unreadInbox: [NewMailItem] = []
     /// The folder currently on screen. INBOX is home and the default; selecting
     /// another swaps the list to that folder's scoped view.
     public private(set) var currentMailbox: Mailbox
@@ -183,6 +186,7 @@ public final class InboxModel {
         let current = try await currentSummaries()
         summaries = pendingRemovals.isEmpty ? current : current.filter { !pendingRemovals.contains($0.id) }
         unreadCounts = try await store.unreadCounts(accountID: account.id)
+        unreadInbox = try await store.unreadInboxItems(accountID: account.id)
     }
 
     public private(set) var hasSynced = false
@@ -323,6 +327,7 @@ public final class InboxModel {
         await attempt {
             self.mailboxes = try await self.store.mailboxes(accountID: self.account.id)
             self.unreadCounts = try await self.store.unreadCounts(accountID: self.account.id)
+            self.unreadInbox = try await self.store.unreadInboxItems(accountID: self.account.id)
         }
     }
 
@@ -1095,6 +1100,7 @@ public final class InboxModel {
         summaries = []
         mailboxes = []
         unreadCounts = [:]
+        unreadInbox = []
         currentMailbox = Mailbox(accountID: account.id, name: "INBOX", role: .inbox)
         errorMessage = nil
         Task { await sync.disconnect() }

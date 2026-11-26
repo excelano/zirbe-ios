@@ -87,6 +87,10 @@ public final class AppSession {
         models.reduce(0) { $0 + ($1.unreadCounts["INBOX"] ?? 0) }
     }
 
+    public var unreadInbox: [NewMailItem] {
+        models.flatMap(\.unreadInbox)
+    }
+
     public func restore() async {
         guard models.isEmpty else { isRestoring = false; return }
         defer { isRestoring = false }

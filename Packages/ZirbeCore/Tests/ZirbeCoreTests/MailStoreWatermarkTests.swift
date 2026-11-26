@@ -165,4 +165,20 @@ final class MailStoreWatermarkTests: XCTestCase {
         XCTAssertEqual(arrivals.map(\.subject), ["R"])
         XCTAssertEqual(arrivals.first?.kinds, [.reactions])
     }
+
+    func testUnreadInboxIgnoresTheMarkAndOtherFolders() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        try await store.save([
+            msg(id: "<a@x>", uid: 1, subject: "A"),
+            msg(id: "<b@x>", uid: 2, subject: "B", seen: true),
+        ], accountID: acct.id, mailboxName: "INBOX")
+        try await store.save([msg(id: "<c@x>", uid: 3, subject: "C")], accountID: acct.id, mailboxName: "Archive")
+        try await store.markNotificationWatermark(accountID: acct.id)
+        try await store.rethread(accountID: acct.id)
+
+        let unread = try await store.unreadInboxItems(accountID: acct.id)
+        XCTAssertEqual(unread.map(\.subject), ["A"])
+    }
 }

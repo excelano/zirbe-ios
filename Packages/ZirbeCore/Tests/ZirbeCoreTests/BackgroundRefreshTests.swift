@@ -38,10 +38,10 @@ final class BackgroundRefreshTests: XCTestCase {
 
         let result = await poll(FakeCredentials([work.id: "pw", home.id: "pw"]))
 
-        guard case let .newMail(arrivals, unreadCount) = result else { return XCTFail("expected new mail") }
+        guard case let .newMail(arrivals, unread) = result else { return XCTFail("expected new mail") }
         XCTAssertEqual(Set(arrivals.map(\.accountID)), [work.id, home.id])
         XCTAssertEqual(Set(arrivals.compactMap(\.subject)), ["Standup", "Dinner"])
-        XCTAssertEqual(unreadCount, 2)
+        XCTAssertEqual(Set(unread.compactMap(\.subject)), ["Standup", "Dinner"])
     }
 
     func testTheNextPollIsUpToDate() async throws {

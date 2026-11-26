@@ -134,12 +134,6 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
         ["accountID": accountID, "id": id]
     }
 
-    /// The stored kinds with unknown raw values dropped; `anythingElse` when none remain.
-    var arrivalKinds: Set<MessageKind> {
-        let known = Set((kinds ?? []).compactMap(MessageKind.init(rawValue:)))
-        return known.isEmpty ? [.anythingElse] : known
-    }
-
     var message: Message {
         Message(
             messageID: messageID,
@@ -173,6 +167,24 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
 private struct UnreadProbe: Decodable, FetchableRecord {
     var mailboxName: String
     var flags: [Flag]
+}
+
+/// The columns a notification and the app badge judge an inbox message by,
+/// leaving out the body and the participant and attachment blobs.
+private struct ArrivalProbe: Decodable, FetchableRecord {
+    var threadID: String?
+    var fromName: String?
+    var fromAddress: String?
+    var subject: String?
+    var kinds: [String]?
+    var reaction: String?
+    var flags: [Flag]
+
+    /// The stored kinds with unknown raw values dropped; `anythingElse` when none remain.
+    var arrivalKinds: Set<MessageKind> {
+        let known = Set((kinds ?? []).compactMap(MessageKind.init(rawValue:)))
+        return known.isEmpty ? [.anythingElse] : known
+    }
 }
 
 /// A body-free projection of `message` for the rethread. Threading needs the
@@ -1246,28 +1258,42 @@ public final class MailStore: @unchecked Sendable {
                 sql: "SELECT lastNotifiedUID FROM syncState WHERE accountID = ?",
                 arguments: [accountID]
             ) ?? 0
-            let alerts = try Self.alerts(in: db, accountID: accountID)
-            return try MessageRow
-                .filter(Column("accountID") == accountID
-                    && Column("mailboxName") == Self.inboxMailbox
-                    && Column("uid") != nil
-                    && Column("uid") > watermark
-                    && (Column("reaction") == nil || Column("reaction") != ""))
-                .order(Column("uid"))
-                .fetchAll(db)
-                .filter { !$0.flags.contains(.seen) }
-                .map { row in
-                    NewMailItem(
-                        accountID: accountID,
-                        threadID: row.threadID,
-                        senderName: row.fromName,
-                        senderAddress: row.fromAddress,
-                        subject: row.subject,
-                        kinds: row.arrivalKinds,
-                        alert: row.threadID.flatMap { alerts[$0] } ?? .default,
-                        reaction: row.reaction
-                    )
-                }
+            return try Self.unreadInbox(in: db, accountID: accountID, above: watermark)
+        }
+    }
+
+    /// Every unseen INBOX message held for the account, oldest first, in the
+    /// shape the notification rules judge, for the app badge (zirbe-desktop's
+    /// CONVERSATIONS.md § Notifications). A withdrawn reaction is left out.
+    public func unreadInboxItems(accountID: String) async throws -> [NewMailItem] {
+        try await database.read { db in
+            try Self.unreadInbox(in: db, accountID: accountID, above: 0)
+        }
+    }
+
+    private static func unreadInbox(in db: Database, accountID: String, above watermark: Int64) throws -> [NewMailItem] {
+        let alerts = try alerts(in: db, accountID: accountID)
+        return try ArrivalProbe.fetchAll(
+            db,
+            sql: """
+                SELECT threadID, fromName, fromAddress, subject, kinds, reaction, flags FROM message
+                WHERE accountID = ? AND mailboxName = ? AND uid > ? AND (reaction IS NULL OR reaction != '')
+                ORDER BY uid
+                """,
+            arguments: [accountID, inboxMailbox, watermark]
+        )
+        .filter { !$0.flags.contains(.seen) }
+        .map { row in
+            NewMailItem(
+                accountID: accountID,
+                threadID: row.threadID,
+                senderName: row.fromName,
+                senderAddress: row.fromAddress,
+                subject: row.subject,
+                kinds: row.arrivalKinds,
+                alert: row.threadID.flatMap { alerts[$0] } ?? .default,
+                reaction: row.reaction
+            )
         }
     }
 

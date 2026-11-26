@@ -15,11 +15,12 @@ import Foundation
 import ZirbeMail
 
 /// The outcome of one background poll, for the caller to act on. `.newMail`
-/// carries the arrival candidates, which the notification rules may still drop, and the inbox's unread count for the app badge;
+/// carries the arrival candidates, which the notification rules may still drop,
+/// and every unseen inbox message, which those rules count for the app badge;
 /// `.upToDate` means the sync ran but found nothing new; `.failed` means it
 /// couldn't run (no account, no password, server unreachable).
 public enum BackgroundRefreshResult: Sendable {
-    case newMail([NewMailItem], unreadCount: Int)
+    case newMail([NewMailItem], unread: [NewMailItem])
     case upToDate
     case failed
 }
@@ -69,11 +70,11 @@ public enum BackgroundRefresh {
             }
         }
         guard anySynced else { return .failed }
-        var unreadCount = 0
+        var unread: [NewMailItem] = []
         for account in accounts {
-            unreadCount += (try? await store.unreadCounts(accountID: account.id)["INBOX"]) ?? 0
+            unread += (try? await store.unreadInboxItems(accountID: account.id)) ?? []
         }
-        return arrivals.isEmpty ? .upToDate : .newMail(arrivals, unreadCount: unreadCount)
+        return arrivals.isEmpty ? .upToDate : .newMail(arrivals, unread: unread)
     }
 
     private static func poll(

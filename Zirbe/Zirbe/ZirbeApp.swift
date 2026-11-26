@@ -26,8 +26,8 @@ struct ZirbeApp: App {
         // modifier; the first request is queued when the inbox backgrounds (see
         // InboxView).
         .backgroundTask(.appRefresh(BackgroundRefresh.taskIdentifier)) {
-            if case let .newMail(arrivals, unreadCount) = await BackgroundRefresh.run() {
-                await NewMailNotifier.shared.post(arrivals, badgeCount: unreadCount)
+            if case let .newMail(arrivals, unread) = await BackgroundRefresh.run() {
+                await NewMailNotifier.shared.post(arrivals, unread: unread)
             }
             BackgroundRefreshScheduler.schedule()
         }

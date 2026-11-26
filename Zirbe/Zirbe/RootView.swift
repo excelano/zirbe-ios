@@ -28,8 +28,11 @@ struct RootView: View {
                 navigation(scope: scope)
                 .id(scopeID)
                 .onChange(of: scopeID) { path.removeAll() }
-                .task(id: session.inboxUnreadCount) {
-                    await notifier.updateBadge(unreadCount: session.inboxUnreadCount)
+                .task(id: session.unreadInbox) {
+                    await notifier.updateBadge(unread: session.unreadInbox)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+                    Task { await notifier.updateBadge(unread: session.unreadInbox) }
                 }
                 // Land in the inbox, then ask for notification permission once.
                 // Demo mode never prompts, so a permission alert can't land on a
