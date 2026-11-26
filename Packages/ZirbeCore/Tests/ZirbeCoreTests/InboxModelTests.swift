@@ -576,6 +576,16 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(callsAfter, callsBefore)
     }
 
+    func testSetAlertReloadsTheList() async throws {
+        await server.add(incoming("Plan", id: "<a@x>"))
+        try await model.signIn(password: "pw")
+        XCTAssertEqual(model.summaries.first?.alert, .default)
+
+        await model.setAlert(threadID: try summary("Plan").id, alert: .mute)
+
+        XCTAssertEqual(model.summaries.first?.alert, .mute)
+    }
+
     // MARK: Bulk mutations
 
     func testTrashDropsTheRowsAndMovesTheMailOnTheServer() async throws {

@@ -81,6 +81,36 @@ public struct MessageBody: Sendable, Hashable {
     }
 }
 
+/// One MIME leaf of a message, as its body structure declares it.
+public struct EnvelopePart: Sendable, Hashable {
+    /// The base type, lowercased, without parameters.
+    public var mimeType: String
+    public var filename: String?
+    /// The `Content-Disposition` type, lowercased.
+    public var disposition: String?
+    public var contentID: String?
+    /// The part's size in octets after transfer decoding.
+    public var size: Int?
+    /// The text of a `text/calendar` part, filled by the engine.
+    public var calendar: String?
+
+    public init(
+        mimeType: String,
+        filename: String? = nil,
+        disposition: String? = nil,
+        contentID: String? = nil,
+        size: Int? = nil,
+        calendar: String? = nil
+    ) {
+        self.mimeType = mimeType
+        self.filename = filename
+        self.disposition = disposition
+        self.contentID = contentID
+        self.size = size
+        self.calendar = calendar
+    }
+}
+
 /// A message's envelope, including the RFC 5322 threading headers that decide
 /// which conversation a message belongs to. `from`/`to` are raw header strings
 /// for now; parsing into participants belongs to the domain layer.
@@ -104,7 +134,14 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
     /// (including reactions from clients that don't set the header). Read off the
     /// full header block the fetch already pulls, so it needs no extra round trip.
     public var reaction: String?
-    public var partTypes: [String]
+    /// The message's MIME leaves, in body-structure order.
+    public var parts: [EnvelopePart]
+    /// The root `Content-Type` header value, lowercased, parameters kept.
+    public var contentType: String?
+    /// `Precedence`, trimmed and lowercased.
+    public var precedence: String?
+    /// `Auto-Submitted`, trimmed and lowercased.
+    public var autoSubmitted: String?
     /// The mailing list from `List-Id`: its lowercased identifier and its name
     /// (the identifier when the header has no phrase). Nil for other mail.
     public var listID: String?
@@ -135,7 +172,10 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
         references: [String] = [],
         flags: [String] = [],
         reaction: String? = nil,
-        partTypes: [String] = [],
+        parts: [EnvelopePart] = [],
+        contentType: String? = nil,
+        precedence: String? = nil,
+        autoSubmitted: String? = nil,
         listID: String? = nil,
         listName: String? = nil,
         listPost: String? = nil,
@@ -153,7 +193,10 @@ public struct MailEnvelope: Sendable, Hashable, Identifiable {
         self.references = references
         self.flags = flags
         self.reaction = reaction
-        self.partTypes = partTypes
+        self.parts = parts
+        self.contentType = contentType
+        self.precedence = precedence
+        self.autoSubmitted = autoSubmitted
         self.listID = listID
         self.listName = listName
         self.listPost = listPost

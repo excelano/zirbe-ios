@@ -161,6 +161,23 @@ final class SyncServiceTests: XCTestCase {
         XCTAssertEqual(arrivals.map(\.subject), ["New"])
     }
 
+    func testSyncStoresKindsFromTheStructure() async throws {
+        var envelope = incoming("Memo", id: "<k@x>")
+        envelope.parts = [
+            EnvelopePart(mimeType: "text/html"),
+            EnvelopePart(mimeType: "audio/mp4", filename: "voice.m4a", disposition: "attachment", size: 5_000),
+        ]
+        await server.add(envelope)
+        try await sync.syncInbox(login: login)
+
+        let arrivals = try await store.unnotifiedInboxArrivals(accountID: account.id)
+        XCTAssertEqual(arrivals.map(\.kinds), [[.formattedText, .audio]])
+
+        try await sync.syncInbox(login: login)
+        let again = try await store.unnotifiedInboxArrivals(accountID: account.id)
+        XCTAssertEqual(again.map(\.kinds), [[.formattedText, .audio]], "a re-sync keeps the header column")
+    }
+
     func testMailOlderThanTheFetchWindowSurvivesPruning() async throws {
         for i in 0..<3 {
             await server.add(incoming("Old \(i)", id: "<o\(i)@x>", minutes: i))

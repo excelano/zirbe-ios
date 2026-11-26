@@ -62,6 +62,8 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
     var mailingList: MailingList?
     /// The `List-Unsubscribe` links, as JSON; nil on rows stored before they were kept.
     var unsubscribe: [String]?
+    /// The message's kinds as raw values in `MessageKind` order; nil when it has none.
+    var kinds: [String]?
 
     init(_ message: Message, accountID: String, mailboxName: String) {
         self.id = message.id
@@ -89,6 +91,7 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
         self.media = message.media.rawValue
         self.mailingList = message.mailingList
         self.unsubscribe = message.unsubscribe.isEmpty ? nil : message.unsubscribe
+        self.kinds = message.kinds.isEmpty ? nil : MessageKind.allCases.filter(message.kinds.contains).map(\.rawValue)
         self.snippet = Self.preview(text: message.bodyText, invite: message.invite)
             ?? message.transcript.flatMap(Self.preview(of:))
     }
@@ -129,6 +132,12 @@ struct MessageRow: Codable, FetchableRecord, PersistableRecord {
 
     static func key(id: String, accountID: String) -> [String: (any DatabaseValueConvertible)?] {
         ["accountID": accountID, "id": id]
+    }
+
+    /// The stored kinds with unknown raw values dropped; `anythingElse` when none remain.
+    var arrivalKinds: Set<MessageKind> {
+        let known = Set((kinds ?? []).compactMap(MessageKind.init(rawValue:)))
+        return known.isEmpty ? [.anythingElse] : known
     }
 
     var message: Message {
@@ -553,7 +562,7 @@ public final class MailStore: @unchecked Sendable {
 
     public func eraseAccount(_ accountID: String) async throws {
         try await database.write { db in
-            for table in ["message", "thread", "mailbox", "syncState", "pinnedThread", "blockedSender"] {
+            for table in ["message", "thread", "mailbox", "syncState", "pinnedThread", "threadAlert", "blockedSender"] {
                 try db.execute(sql: "DELETE FROM \(table) WHERE accountID = ?", arguments: [accountID])
             }
             try db.execute(sql: "DELETE FROM account WHERE id = ?", arguments: [accountID])
@@ -741,6 +750,25 @@ public final class MailStore: @unchecked Sendable {
                 try db.execute(
                     sql: "DELETE FROM pinnedThread WHERE accountID = ? AND threadID = ?",
                     arguments: [accountID, threadID]
+                )
+            }
+        }
+    }
+
+    /// Set a conversation's notification override. Local app state keyed by thread
+    /// id within the account, kept the way a pin is: `.default` is the absence of a
+    /// row, so setting it deletes the row.
+    public func setAlert(_ alert: ConversationAlert, threadID: String, accountID: String) async throws {
+        try await database.write { db in
+            if alert == .default {
+                try db.execute(
+                    sql: "DELETE FROM threadAlert WHERE accountID = ? AND threadID = ?",
+                    arguments: [accountID, threadID]
+                )
+            } else {
+                try db.execute(
+                    sql: "INSERT OR REPLACE INTO threadAlert (accountID, threadID, alert) VALUES (?, ?, ?)",
+                    arguments: [accountID, threadID, alert.rawValue]
                 )
             }
         }
@@ -1041,32 +1069,30 @@ public final class MailStore: @unchecked Sendable {
                 )
                 if let old = row.threadID, let newID, !threadIDs.contains(old) { oldToNew[old] = newID }
             }
-            // Follow pins across the re-root, so a pinned conversation keeps its pin
-            // instead of silently dropping out of the pinned group. Nothing else is
-            // keyed by thread id (read/flag/reaction ride on message rows).
-            try Self.repin(across: oldToNew, in: db, accountID: accountID)
+            // Follow pins and alerts across the re-root, so a conversation keeps
+            // them instead of silently dropping out of the pinned group or losing
+            // its override. Nothing else is keyed by thread id (read/flag/reaction
+            // ride on message rows).
+            try Self.moveThreadState(across: oldToNew, in: db, accountID: accountID)
         }
     }
 
-    /// Rewrite `pinnedThread` rows whose thread id changed in a rethread, moving
-    /// each pin from the old id to the new one. A no-op when nothing re-rooted.
-    private static func repin(across oldToNew: [String: String], in db: Database, accountID: String) throws {
-        guard !oldToNew.isEmpty else { return }
-        let pinned = try String.fetchAll(
-            db,
-            sql: "SELECT threadID FROM pinnedThread WHERE accountID = ?",
-            arguments: [accountID]
-        )
-        for old in pinned {
-            guard let new = oldToNew[old], new != old else { continue }
-            try db.execute(
-                sql: "DELETE FROM pinnedThread WHERE accountID = ? AND threadID = ?",
-                arguments: [accountID, old]
-            )
-            try db.execute(
-                sql: "INSERT OR IGNORE INTO pinnedThread (accountID, threadID) VALUES (?, ?)",
-                arguments: [accountID, new]
-            )
+    /// Rewrite `pinnedThread` and `threadAlert` rows whose thread id changed in a
+    /// rethread, moving each row from the old id to the new one. When a row is
+    /// already at the new id it is kept and the old one dropped. A no-op when
+    /// nothing re-rooted.
+    private static func moveThreadState(across oldToNew: [String: String], in db: Database, accountID: String) throws {
+        for table in ["pinnedThread", "threadAlert"] {
+            for (old, new) in oldToNew.sorted(by: { $0.key < $1.key }) where new != old {
+                try db.execute(
+                    sql: "UPDATE OR IGNORE \(table) SET threadID = ? WHERE accountID = ? AND threadID = ?",
+                    arguments: [new, accountID, old]
+                )
+                try db.execute(
+                    sql: "DELETE FROM \(table) WHERE accountID = ? AND threadID = ?",
+                    arguments: [accountID, old]
+                )
+            }
         }
     }
 
@@ -1111,7 +1137,7 @@ public final class MailStore: @unchecked Sendable {
     public func threadSummaries(accountID: String) async throws -> [ThreadSummary] {
         try await database.read { db in
             let rows = try ThreadRow.filter(Column("accountID") == accountID).fetchAll(db)
-            return try Self.ordered(rows, pinnedIn: db, accountID: accountID)
+            return try Self.ordered(rows, stateIn: db, accountID: accountID)
         }
     }
 
@@ -1131,31 +1157,53 @@ public final class MailStore: @unchecked Sendable {
             let rows = try ThreadRow
                 .filter(Column("accountID") == accountID && threadIDs.contains(Column("id")))
                 .fetchAll(db)
-            return try Self.ordered(rows, pinnedIn: db, accountID: accountID)
+            return try Self.ordered(rows, stateIn: db, accountID: accountID)
         }
     }
 
-    /// Turn thread rows into summaries, marking the pinned ones from the
-    /// `pinnedThread` table and sorting pinned conversations to the top, each group
-    /// by most recent activity. Shared by the inbox and per-folder reads so both
-    /// order the same way. Search results are ordered separately (by recency), so
-    /// they don't route through here.
-    private static func ordered(_ rows: [ThreadRow], pinnedIn db: Database, accountID: String) throws -> [ThreadSummary] {
+    /// Turn thread rows into summaries carrying their pin and alert, and sort
+    /// pinned conversations to the top, each group by most recent activity.
+    /// Shared by the inbox and per-folder reads so both order the same way.
+    /// Search results keep recency order, so they use `summaries(of:stateIn:accountID:)`.
+    private static func ordered(_ rows: [ThreadRow], stateIn db: Database, accountID: String) throws -> [ThreadSummary] {
+        try summaries(of: rows, stateIn: db, accountID: accountID)
+            .sorted { lhs, rhs in
+                if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+                return (lhs.lastActivity ?? .distantPast) > (rhs.lastActivity ?? .distantPast)
+            }
+    }
+
+    /// Thread rows as summaries, in row order, with each one's pin from the
+    /// `pinnedThread` table and alert from `threadAlert`.
+    private static func summaries(of rows: [ThreadRow], stateIn db: Database, accountID: String) throws -> [ThreadSummary] {
         let pinned = try String.fetchSet(
             db,
             sql: "SELECT threadID FROM pinnedThread WHERE accountID = ?",
             arguments: [accountID]
         )
-        return rows
-            .map { row -> ThreadSummary in
-                var summary = row.summary
-                summary.isPinned = pinned.contains(row.id)
-                return summary
-            }
-            .sorted { lhs, rhs in
-                if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
-                return (lhs.lastActivity ?? .distantPast) > (rhs.lastActivity ?? .distantPast)
-            }
+        let alerts = try Self.alerts(in: db, accountID: accountID)
+        return rows.map { row in
+            var summary = row.summary
+            summary.isPinned = pinned.contains(row.id)
+            summary.alert = alerts[row.id] ?? .default
+            return summary
+        }
+    }
+
+    /// The account's conversation overrides by thread id. A stored value this
+    /// build does not know reads as `.default`.
+    private static func alerts(in db: Database, accountID: String) throws -> [String: ConversationAlert] {
+        var alerts: [String: ConversationAlert] = [:]
+        let rows = try Row.fetchAll(
+            db,
+            sql: "SELECT threadID, alert FROM threadAlert WHERE accountID = ?",
+            arguments: [accountID]
+        )
+        for row in rows {
+            let raw: String = row["alert"]
+            alerts[row["threadID"]] = ConversationAlert(rawValue: raw) ?? .default
+        }
+        return alerts
     }
 
     /// The unread message count of each folder, keyed by mailbox name, for the
@@ -1198,12 +1246,13 @@ public final class MailStore: @unchecked Sendable {
                 sql: "SELECT lastNotifiedUID FROM syncState WHERE accountID = ?",
                 arguments: [accountID]
             ) ?? 0
+            let alerts = try Self.alerts(in: db, accountID: accountID)
             return try MessageRow
                 .filter(Column("accountID") == accountID
                     && Column("mailboxName") == Self.inboxMailbox
                     && Column("uid") != nil
                     && Column("uid") > watermark
-                    && Column("reaction") == nil)
+                    && (Column("reaction") == nil || Column("reaction") != ""))
                 .order(Column("uid"))
                 .fetchAll(db)
                 .filter { !$0.flags.contains(.seen) }
@@ -1213,7 +1262,10 @@ public final class MailStore: @unchecked Sendable {
                         threadID: row.threadID,
                         senderName: row.fromName,
                         senderAddress: row.fromAddress,
-                        subject: row.subject
+                        subject: row.subject,
+                        kinds: row.arrivalKinds,
+                        alert: row.threadID.flatMap { alerts[$0] } ?? .default,
+                        reaction: row.reaction
                     )
                 }
         }
@@ -1260,11 +1312,11 @@ public final class MailStore: @unchecked Sendable {
 
     private static func summaries(threadIDs: Set<String>, accountID: String, _ db: Database) throws -> [ThreadSummary] {
         guard !threadIDs.isEmpty else { return [] }
-        return try ThreadRow
+        let rows = try ThreadRow
             .filter(Column("accountID") == accountID && threadIDs.contains(Column("id")))
             .order(Column("lastActivity").desc)
             .fetchAll(db)
-            .map(\.summary)
+        return try summaries(of: rows, stateIn: db, accountID: accountID)
     }
 
 
@@ -1773,6 +1825,22 @@ public final class MailStore: @unchecked Sendable {
                 t.column("messageID", .text).notNull()
                 t.column("draft", .blob).notNull()
                 t.primaryKey(["accountID", "messageID"])
+            }
+        }
+        migrator.registerMigration("v30-message-kinds") { db in
+            try db.alter(table: "message") { t in
+                t.add(column: "kinds", .text)
+            }
+        }
+        // A conversation's notification override (Always Notify or Mute): local app
+        // state kept the way a pin is, keyed by thread id within an account, with the
+        // ConversationAlert raw value as `alert`. Default is no row.
+        migrator.registerMigration("v31-thread-alert") { db in
+            try db.create(table: "threadAlert") { t in
+                t.column("accountID", .text).notNull()
+                t.column("threadID", .text).notNull()
+                t.column("alert", .text).notNull()
+                t.primaryKey(["accountID", "threadID"])
             }
         }
         return migrator

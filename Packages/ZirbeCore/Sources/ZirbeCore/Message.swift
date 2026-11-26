@@ -71,6 +71,9 @@ public struct Message: Sendable, Hashable, Identifiable {
     public var mailingList: MailingList?
     /// The links in the message's `List-Unsubscribe` header, in the order given.
     public var unsubscribe: [String]
+    /// The kinds the message's structure classifies it as; empty for a message
+    /// that did not come from a synced envelope.
+    public var kinds: Set<MessageKind>
 
     public init(
         messageID: String? = nil,
@@ -92,7 +95,8 @@ public struct Message: Sendable, Hashable, Identifiable {
         transcript: String? = nil,
         media: MessageMedia? = nil,
         mailingList: MailingList? = nil,
-        unsubscribe: [String] = []
+        unsubscribe: [String] = [],
+        kinds: Set<MessageKind> = []
     ) {
         self.messageID = messageID
         self.uid = uid
@@ -114,6 +118,7 @@ public struct Message: Sendable, Hashable, Identifiable {
         self.media = media ?? MessageMedia(mimeTypes: attachments.map(\.mimeType))
         self.mailingList = mailingList
         self.unsubscribe = unsubscribe
+        self.kinds = kinds
     }
 
     /// Whether this message answers a meeting invitation (an attendee's accept,

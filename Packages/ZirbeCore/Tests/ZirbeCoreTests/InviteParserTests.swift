@@ -368,3 +368,11 @@ final class InviteParserTests: XCTestCase {
         XCTAssertEqual(decoded, invite, "the store column carries it as JSON")
     }
 }
+
+extension InviteParserTests {
+    func testMethodIsReadFromTheCalendar() {
+        XCTAssertEqual(InviteParser.method(iCalendar: "BEGIN:VCALENDAR\r\nMETHOD:reply\r\nBEGIN:VEVENT\r\nUID:1\r\nEND:VEVENT\r\nEND:VCALENDAR"), "REPLY")
+        XCTAssertNil(InviteParser.method(iCalendar: "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:1\r\nEND:VEVENT\r\nEND:VCALENDAR"))
+        XCTAssertNil(InviteParser.method(iCalendar: "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nMETHOD:REQUEST\r\nEND:VEVENT\r\nEND:VCALENDAR"))
+    }
+}

@@ -110,4 +110,59 @@ final class MailStoreWatermarkTests: XCTestCase {
         let arrivals = try await store.unnotifiedInboxArrivals(accountID: acct.id)
         XCTAssertTrue(arrivals.isEmpty)
     }
+
+    func testArrivalsCarryTheirKinds() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        var message = msg(id: "<a@x>", uid: 1, subject: "A")
+        message.kinds = [.plainText, .audio]
+        try await store.save([message], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        let arrivals = try await store.unnotifiedInboxArrivals(accountID: acct.id)
+        XCTAssertEqual(arrivals.map(\.kinds), [[.plainText, .audio]])
+    }
+
+    func testArrivalsCarryTheirConversationsAlert() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        try await store.save([
+            msg(id: "<a@x>", uid: 1, subject: "A"),
+            msg(id: "<b@x>", uid: 2, subject: "B"),
+        ], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        let listed = try await store.threadSummaries(accountID: acct.id)
+        let muted = try XCTUnwrap(listed.first { $0.subject == "A" }?.id)
+        try await store.setAlert(.mute, threadID: muted, accountID: acct.id)
+
+        let arrivals = try await store.unnotifiedInboxArrivals(accountID: acct.id)
+        XCTAssertEqual(arrivals.map(\.alert), [.mute, .default])
+    }
+
+    func testRowWithoutKindsArrivesAsAnythingElse() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        try await store.save([msg(id: "<a@x>", uid: 1, subject: "A")], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        let arrivals = try await store.unnotifiedInboxArrivals(accountID: acct.id)
+        XCTAssertEqual(arrivals.map(\.kinds), [[.anythingElse]])
+    }
+
+    func testReactionsArriveButWithdrawalsDoNot() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        var reaction = msg(id: "<r@x>", uid: 1, subject: "R")
+        reaction.reaction = "\u{1F44D}"
+        reaction.kinds = [.reactions]
+        var withdrawal = msg(id: "<w@x>", uid: 2, subject: "W")
+        withdrawal.reaction = ""
+        try await store.save([reaction, withdrawal], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        let arrivals = try await store.unnotifiedInboxArrivals(accountID: acct.id)
+        XCTAssertEqual(arrivals.map(\.subject), ["R"])
+        XCTAssertEqual(arrivals.first?.kinds, [.reactions])
+    }
 }

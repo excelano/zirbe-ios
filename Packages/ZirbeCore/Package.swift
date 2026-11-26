@@ -20,6 +20,8 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../ZirbeMail"),
+        // A dependency's exact pin applies only when that package is the root, so the root repeats it: see ZirbeMail/Package.swift.
+        .package(url: "https://github.com/apple/swift-nio-imap", exact: "0.3.0"),
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
         // Klartext owns quote seam detection and trailer synthesis; QuotedText is
         // now the Zirbe-domain adapter over it.

@@ -26,14 +26,14 @@ final class MessageMediaTests: XCTestCase {
         return (store, acct)
     }
 
-    private func envelope(uid: UInt32, subject: String, partTypes: [String]) -> MailEnvelope {
+    private func envelope(uid: UInt32, subject: String, mimeTypes: [String]) -> MailEnvelope {
         MailEnvelope(
             uid: uid,
             subject: subject,
             from: "p@x.com",
             date: Date(timeIntervalSince1970: TimeInterval(uid) * 60),
             messageID: "<\(uid)@x>",
-            partTypes: partTypes
+            parts: mimeTypes.map { EnvelopePart(mimeType: $0) }
         )
     }
 
@@ -45,9 +45,9 @@ final class MessageMediaTests: XCTestCase {
 
     func testAThreadCarriesTheMediaOfItsMessages() async throws {
         let (store, acct) = try await store()
-        let voice = Message(envelope(uid: 1, subject: "Voice", partTypes: ["text/plain", "audio/mp4"]))
-        let video = Message(envelope(uid: 2, subject: "Video", partTypes: ["video/mp4"]))
-        let plain = Message(envelope(uid: 3, subject: "Plain", partTypes: ["text/plain"]))
+        let voice = Message(envelope(uid: 1, subject: "Voice", mimeTypes: ["text/plain", "audio/mp4"]))
+        let video = Message(envelope(uid: 2, subject: "Video", mimeTypes: ["video/mp4"]))
+        let plain = Message(envelope(uid: 3, subject: "Plain", mimeTypes: ["text/plain"]))
         try await store.save([voice, video, plain], accountID: acct.id, mailboxName: "INBOX")
         try await store.rethread(accountID: acct.id)
 
@@ -60,7 +60,7 @@ final class MessageMediaTests: XCTestCase {
 
     func testAStoredBodyAddsTheMediaOfItsAttachments() async throws {
         let (store, acct) = try await store()
-        let older = Message(envelope(uid: 1, subject: "Voice", partTypes: []))
+        let older = Message(envelope(uid: 1, subject: "Voice", mimeTypes: []))
         try await store.save([older], accountID: acct.id, mailboxName: "INBOX")
         let voice = MessageAttachment(filename: "Voice Message.m4a", mimeType: "audio/mp4", partID: "2")
         try await store.storeBodies([older.id: (text: "", hasHTML: false, attachments: [voice])], accountID: acct.id)
@@ -72,7 +72,7 @@ final class MessageMediaTests: XCTestCase {
 
     func testAHeaderResaveKeepsTheMediaItsBodyFound() async throws {
         let (store, acct) = try await store()
-        let older = Message(envelope(uid: 1, subject: "Voice", partTypes: []))
+        let older = Message(envelope(uid: 1, subject: "Voice", mimeTypes: []))
         try await store.save([older], accountID: acct.id, mailboxName: "INBOX")
         let voice = MessageAttachment(filename: "Voice Message.m4a", mimeType: "audio/mp4", partID: "2")
         try await store.storeBodies([older.id: (text: "", hasHTML: false, attachments: [voice])], accountID: acct.id)

@@ -53,14 +53,15 @@ final class NewMailNotifier: NSObject, ObservableObject, UNUserNotificationCente
 
     /// Post for the arrivals a background poll found, and set the app badge to the
     /// inbox unread count. A no-op when the user has turned notifications off or
-    /// hasn't granted them. A small run posts one banner each; a larger one
+    /// hasn't granted them. Arrivals the user's rules and conversation alerts
+    /// exclude are dropped first. A small run posts one banner each; a larger one
     /// collapses to a single summary (NewMailNotification.plan).
     func post(_ arrivals: [NewMailItem], badgeCount: Int) async {
         guard !arrivals.isEmpty, notificationsEnabled else { return }
         let center = UNUserNotificationCenter.current()
         guard await center.notificationSettings().authorizationStatus == .authorized else { return }
 
-        for request in requests(for: NewMailNotification.plan(for: arrivals)) {
+        for request in requests(for: NewMailNotification.plan(for: arrivals, rules: rules)) {
             try? await center.add(request)
         }
         try? await center.setBadgeCount(badgeCount)
@@ -80,6 +81,19 @@ final class NewMailNotifier: NSObject, ObservableObject, UNUserNotificationCente
     /// the key was never written, matching the Settings toggle's default.
     private var notificationsEnabled: Bool {
         UserDefaults.standard.object(forKey: SettingsKeys.newMailNotifications) as? Bool ?? true
+    }
+
+    /// The user's per-kind choices and Favorites list, read from the settings
+    /// keys. A kind never set, or stored as an unknown value, reads as Everyone.
+    private var rules: NotificationRules {
+        let defaults = UserDefaults.standard
+        var who: [MessageKind: NotifyWho] = [:]
+        for kind in MessageKind.allCases {
+            if let stored = defaults.string(forKey: SettingsKeys.notifyWho(kind)), let choice = NotifyWho(rawValue: stored) {
+                who[kind] = choice
+            }
+        }
+        return NotificationRules(who: who, favorites: defaults.string(forKey: SettingsKeys.notifyFavorites) ?? "")
     }
 
     /// Build the notification requests for a plan: one per banner, or a single

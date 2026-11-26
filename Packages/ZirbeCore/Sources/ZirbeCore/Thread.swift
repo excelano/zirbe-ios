@@ -144,6 +144,9 @@ public struct ThreadSummary: Sendable, Hashable, Identifiable {
     /// Whether the user pinned the thread to the top of the inbox. Local-only app
     /// state (no server flag), applied when the list is read.
     public var isPinned: Bool
+    /// The user's notification override for the thread. Local-only app state,
+    /// applied when the list is read.
+    public var alert: ConversationAlert
     public var messageCount: Int
     /// A one-line preview of the thread's most recent message, shown under the
     /// participants in the inbox row. Nil until the latest message's body has
@@ -161,6 +164,7 @@ public struct ThreadSummary: Sendable, Hashable, Identifiable {
         isUnread: Bool,
         isFlagged: Bool = false,
         isPinned: Bool = false,
+        alert: ConversationAlert = .default,
         messageCount: Int,
         preview: String? = nil,
         media: MessageMedia = []
@@ -173,6 +177,7 @@ public struct ThreadSummary: Sendable, Hashable, Identifiable {
         self.isUnread = isUnread
         self.isFlagged = isFlagged
         self.isPinned = isPinned
+        self.alert = alert
         self.messageCount = messageCount
         self.preview = preview
         self.media = media

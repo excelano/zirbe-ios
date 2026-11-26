@@ -840,6 +840,16 @@ public final class InboxModel {
         }
     }
 
+    /// Set a conversation's notification override. Local-only app state like a
+    /// pin: no connection needed, and the list reloads to show it. Errors surface
+    /// in `errorMessage`.
+    public func setAlert(threadID: String, alert: ConversationAlert) async {
+        await attempt {
+            try await self.store.setAlert(alert, threadID: threadID, accountID: self.account.id)
+            try await self.reloadList()
+        }
+    }
+
     /// Fetch one message's HTML for the Web View, with its inline images, on
     /// demand when the user taps it. Returns nil if not connected, the message is
     /// unknown, or it has no HTML, with any error in `errorMessage`. The body is

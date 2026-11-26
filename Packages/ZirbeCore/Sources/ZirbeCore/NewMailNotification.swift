@@ -23,13 +23,25 @@ public struct NewMailItem: Sendable, Equatable {
     /// The sender's address, the fallback label when there's no display name.
     public let senderAddress: String?
     public let subject: String?
+    /// What the message is, for the notification rules.
+    public let kinds: Set<MessageKind>
+    /// The conversation's own alert setting, which overrides the rules.
+    public let alert: ConversationAlert
+    /// The emoji when the message is a reaction, so the banner reads as one.
+    public let reaction: String?
 
-    public init(accountID: String, threadID: String?, senderName: String?, senderAddress: String?, subject: String?) {
+    public init(
+        accountID: String, threadID: String?, senderName: String?, senderAddress: String?, subject: String?,
+        kinds: Set<MessageKind> = [.anythingElse], alert: ConversationAlert = .default, reaction: String? = nil
+    ) {
         self.accountID = accountID
         self.threadID = threadID
         self.senderName = senderName
         self.senderAddress = senderAddress
         self.subject = subject
+        self.kinds = kinds
+        self.alert = alert
+        self.reaction = reaction
     }
 }
 
@@ -65,13 +77,15 @@ public enum NewMailNotification {
     /// The default count above which per-message banners collapse to a summary.
     public static let defaultCap = 3
 
-    /// Decide what to post for `items`. Empty yields `.none`; up to `cap` arrivals
-    /// each get their own banner; more collapse to a `.summary`.
-    public static func plan(for items: [NewMailItem], cap: Int = defaultCap) -> Plan {
+    /// Decide what to post for the `arrivals` that pass `rules`. None yields
+    /// `.none`; up to `cap` of them each get their own banner; more collapse to a
+    /// `.summary`.
+    public static func plan(for arrivals: [NewMailItem], rules: NotificationRules = NotificationRules(), cap: Int = defaultCap) -> Plan {
+        let items = arrivals.filter(rules.notifies)
         guard !items.isEmpty else { return .none }
         guard items.count <= cap else { return .summary(count: items.count) }
         return .items(items.map { item in
-            Pending(accountID: item.accountID, threadID: item.threadID, title: senderLabel(item), body: subjectLine(item))
+            Pending(accountID: item.accountID, threadID: item.threadID, title: senderLabel(item), body: bodyLine(item))
         })
     }
 
@@ -87,7 +101,13 @@ public enum NewMailNotification {
         return "New message"
     }
 
-    /// The banner body: the subject, or a stand-in for a subjectless message.
+    /// The banner body: "Reacted" and the emoji for a reaction, else the subject.
+    private static func bodyLine(_ item: NewMailItem) -> String {
+        if let emoji = item.reaction, !emoji.isEmpty { return "Reacted \(emoji)" }
+        return subjectLine(item)
+    }
+
+    /// The subject, or a stand-in for a subjectless message.
     private static func subjectLine(_ item: NewMailItem) -> String {
         let subject = item.subject?.trimmingCharacters(in: .whitespacesAndNewlines)
         return (subject?.isEmpty == false) ? subject! : "(no subject)"

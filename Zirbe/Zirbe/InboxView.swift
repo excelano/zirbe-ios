@@ -601,6 +601,14 @@ private struct RowActions: ViewModifier {
                         )
                     }
                     Button {
+                        Task { await model.setAlert(threadID: summary.id, alert: summary.alert == .mute ? .default : .mute) }
+                    } label: {
+                        Label(
+                            summary.alert == .mute ? "Unmute" : "Mute",
+                            systemImage: summary.alert == .mute ? "bell" : "bell.slash"
+                        )
+                    }
+                    Button {
                         onRemove(summary)
                         Task { await model.archive(summary) }
                     } label: {
@@ -676,7 +684,7 @@ private struct ThreadRow: View {
                 fallback: summary.participants.first ?? Participant(address: owner?.emailAddress ?? "")
             )
             VStack(alignment: .leading, spacing: 3) {
-                // The subject owns the first line; a pin and flag trail it so
+                // The subject owns the first line; a pin, flag and mute mark trail it so
                 // subjects still share a left edge whatever their markers.
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(title)
@@ -694,6 +702,12 @@ private struct ThreadRow: View {
                             .font(.caption)
                             .foregroundStyle(.orange)
                             .accessibilityLabel("Flagged")
+                    }
+                    if summary.alert == .mute {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Muted")
                     }
                     Spacer(minLength: 8)
                 }

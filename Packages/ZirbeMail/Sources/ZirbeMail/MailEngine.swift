@@ -97,7 +97,7 @@ public actor MailEngine {
             self.logger.debug("selected \(mailbox): \(selection.messageCount) message(s)")
             guard let identifiers = selection.latest(limit) else { return [] }
             let infos = try await self.server.fetchMessageInfosBulk(using: identifiers)
-            return try await self.envelopesReadingReactions(infos)
+            return try await self.envelopesReadingParts(infos)
         }
     }
 
@@ -127,7 +127,7 @@ public actor MailEngine {
             let newest = matches.sorted { $0.value < $1.value }.suffix(limit)
             guard !newest.isEmpty else { return [] }
             let infos = try await self.server.fetchMessageInfosBulk(using: UIDSet(Array(newest)))
-            return try await self.envelopesReadingReactions(infos)
+            return try await self.envelopesReadingParts(infos)
         }
     }
 
@@ -650,29 +650,85 @@ public actor MailEngine {
 
     // MARK: - Body part selection
 
-    /// The first text leaf of `type` (e.g. `text/plain`), skipping anything
-    /// marked as an attachment.
-    /// Envelopes for fetched message infos, with each reaction read. The
-    /// `X-Zirbe-Reaction` header arrives with the envelope; a reaction from
-    /// another client carries its emoji in a body part instead (RFC 9078, or
-    /// Gmail's own JSON part), so those small parts are downloaded in one
-    /// pipelined burst. Only replies whose structure shows such a part pay for it.
-    private func envelopesReadingReactions(_ infos: [MessageInfo]) async throws -> [MailEnvelope] {
+    /// Envelopes for fetched message infos, with each reaction and calendar part
+    /// read. The `X-Zirbe-Reaction` header arrives with the envelope; a reaction
+    /// from another client carries its emoji in a body part instead (RFC 9078,
+    /// or Gmail's own JSON part). Those small parts are downloaded in one
+    /// pipelined burst, and only messages whose structure shows one pay for it.
+    /// The `text/calendar` parts of unread messages follow in a second burst
+    /// whose failure leaves the invitations unread and the sync going.
+    private func envelopesReadingParts(_ infos: [MessageInfo]) async throws -> [MailEnvelope] {
         var envelopes = infos.map(MailEnvelope.init)
-        var wanted: [(index: Int, uid: UID, part: MessagePart)] = []
-        for (index, info) in infos.enumerated() where envelopes[index].reaction == nil && info.inReplyTo != nil {
-            guard let uid = info.uid, let part = Self.reactionPart(in: info.parts) else { continue }
-            wanted.append((index, uid, part))
+        var wanted: [(index: Int, uid: UID, parts: [MessagePart])] = []
+        for (index, info) in infos.enumerated() {
+            guard let uid = info.uid else { continue }
+            let parts = Self.reactionParts(in: info, reaction: envelopes[index].reaction)
+            if !parts.isEmpty { wanted.append((index, uid, parts)) }
         }
-        guard !wanted.isEmpty else { return envelopes }
-        let fetched = try await server.fetchPartsPipelined(parts: wanted.map { ($0.uid, $0.part.section) })
-        for want in wanted {
-            guard let data = fetched[want.uid]?.first(where: { $0.section == want.part.section })?.data else { continue }
-            var filled = want.part
-            filled.data = data
-            envelopes[want.index].reaction = Self.reactionText(of: filled)
+        if !wanted.isEmpty {
+            let fetched = try await server.fetchPartsPipelined(
+                parts: wanted.flatMap { want in want.parts.map { (want.uid, $0.section) } }
+            )
+            for want in wanted {
+                for part in want.parts {
+                    guard let data = fetched[want.uid]?.first(where: { $0.section == part.section })?.data else { continue }
+                    var filled = part
+                    filled.data = data
+                    envelopes[want.index].reaction = Self.reactionText(of: filled)
+                }
+            }
         }
+        await readCalendarParts(of: infos, into: &envelopes)
         return envelopes
+    }
+
+    private func readCalendarParts(of infos: [MessageInfo], into envelopes: inout [MailEnvelope]) async {
+        var wanted: [(index: Int, uid: UID, parts: [MessagePart])] = []
+        for (index, info) in infos.enumerated() {
+            guard let uid = info.uid else { continue }
+            let parts = Self.calendarParts(in: info)
+            if !parts.isEmpty { wanted.append((index, uid, parts)) }
+        }
+        guard !wanted.isEmpty else { return }
+        do {
+            let fetched = try await server.fetchPartsPipelined(
+                parts: wanted.flatMap { want in want.parts.map { (want.uid, $0.section) } }
+            )
+            for want in wanted {
+                for part in want.parts {
+                    guard let data = fetched[want.uid]?.first(where: { $0.section == part.section })?.data,
+                          let position = infos[want.index].parts.firstIndex(where: { $0.section == part.section })
+                    else { continue }
+                    var filled = part
+                    filled.data = data
+                    envelopes[want.index].parts[position].calendar = filled.textContent
+                }
+            }
+        } catch {
+            return
+        }
+    }
+
+    /// The part a message's envelope needs downloaded for its reaction: the
+    /// reaction part of a reply with no `reaction` yet.
+    static func reactionParts(in info: MessageInfo, reaction: String?) -> [MessagePart] {
+        guard reaction == nil, info.inReplyTo != nil, let part = reactionPart(in: info.parts) else { return [] }
+        return [part]
+    }
+
+    /// The `text/calendar` parts worth downloading: those of a message not yet
+    /// seen, no larger than `maxCalendarPartSize` decoded octets.
+    static func calendarParts(in info: MessageInfo) -> [MessagePart] {
+        guard !info.flags.contains(.seen) else { return [] }
+        return info.parts.filter { part in
+            isCalendarType(part) && (EnvelopePart(part).size.map { $0 <= maxCalendarPartSize } ?? true)
+        }
+    }
+
+    static let maxCalendarPartSize = 262_144
+
+    private static func isCalendarType(_ part: MessagePart) -> Bool {
+        EnvelopePart(part).mimeType == "text/calendar"
     }
 
     /// A message's reaction part, from its body structure: an RFC 9078
@@ -700,6 +756,8 @@ public actor MailEngine {
 
     private static let gmailReactionType = "text/vnd.google.email-reaction+json"
 
+    /// The first text leaf of `type` (e.g. `text/plain`), skipping anything
+    /// marked as an attachment.
     static func textLeaf(in parts: [MessagePart], type: String) -> MessagePart? {
         parts.first {
             $0.contentType.lowercased().hasPrefix(type) && $0.disposition?.lowercased() != "attachment"

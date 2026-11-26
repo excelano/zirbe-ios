@@ -138,7 +138,7 @@ final class ReactionTests: XCTestCase {
 
     // MARK: - Store round-trip and filtering
 
-    func testStorePersistsReactionAndKeepsItOutOfArrivalsAndUnread() async throws {
+    func testStorePersistsReactionAndKeepsItOutOfUnreadWhileArriving() async throws {
         let store = try MailStore()
         let acct = account()
         try await store.upsert(acct)
@@ -150,6 +150,7 @@ final class ReactionTests: XCTestCase {
         let reaction = reactionMessage(id: "<r1@x>", target: "<a@x>", emoji: "👍", from: "sam@x.com", at: 60)
         var withUID = reaction
         withUID.uid = 2
+        withUID.kinds = [.reactions]
         try await store.save([base, withUID], accountID: acct.id, mailboxName: "INBOX")
         try await store.rethread(accountID: acct.id)
 
@@ -158,9 +159,13 @@ final class ReactionTests: XCTestCase {
         XCTAssertEqual(loaded?.reactions(forMessageID: "<a@x>").first?.emoji, "👍")
         XCTAssertEqual(loaded?.conversationMessages.count, 1)
 
-        // New-mail and unread counts see the base message but never the reaction.
+        // The reaction reaches the notification decision; only the unread count skips it.
         let arrivals = try await store.unnotifiedInboxArrivals(accountID: acct.id)
-        XCTAssertEqual(arrivals.map(\.subject), ["Plan"])
+        XCTAssertEqual(arrivals.count, 2)
+        XCTAssertEqual(arrivals.first?.subject, "Plan")
+        XCTAssertNil(arrivals.first?.reaction)
+        XCTAssertEqual(arrivals.last?.reaction, "👍")
+        XCTAssertEqual(arrivals.last?.kinds, [.reactions])
         let unread = try await store.unreadCounts(accountID: acct.id)
         XCTAssertEqual(unread["INBOX"], 1)
     }

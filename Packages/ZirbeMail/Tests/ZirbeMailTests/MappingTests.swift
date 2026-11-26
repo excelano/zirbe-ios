@@ -88,15 +88,48 @@ final class MappingTests: XCTestCase {
         XCTAssertNil(MailEnvelope(canonical).reaction)
     }
 
-    func testPartTypesComeFromTheBodyStructure() {
+    func testPartsComeFromTheBodyStructure() {
         let info = MessageInfo(
             sequenceNumber: SequenceNumber(1),
             parts: [
-                MessagePart(sectionString: "1", contentType: "text/plain", disposition: nil, filename: nil, contentId: nil),
-                MessagePart(sectionString: "2", contentType: "audio/mp4", disposition: "attachment", filename: "Voice Message.m4a", contentId: nil),
+                MessagePart(sectionString: "1", contentType: "text/plain; charset=utf-8", disposition: nil, filename: nil, contentId: nil),
+                MessagePart(sectionString: "2", contentType: "image/png", disposition: "INLINE", filename: "logo.png", contentId: "<a@b>", size: 8000),
             ]
         )
-        XCTAssertEqual(MailEnvelope(info).partTypes, ["text/plain", "audio/mp4"])
+        XCTAssertEqual(MailEnvelope(info).parts, [
+            EnvelopePart(mimeType: "text/plain"),
+            EnvelopePart(mimeType: "image/png", filename: "logo.png", disposition: "inline", contentID: "<a@b>", size: 8000, calendar: nil),
+        ])
+    }
+
+    func testBase64PartSizeIsDecoded() {
+        let info = MessageInfo(
+            sequenceNumber: SequenceNumber(1),
+            parts: [
+                MessagePart(sectionString: "1", contentType: "image/png", disposition: nil, encoding: "BASE64", filename: nil, contentId: nil, size: 136_656),
+                MessagePart(sectionString: "2", contentType: "text/plain", disposition: nil, encoding: "7bit", filename: nil, contentId: nil, size: 2_000),
+            ]
+        )
+        let parts = MailEnvelope(info).parts
+        XCTAssertEqual(parts[0].size, 99_864)
+        let expected: Double = 136_656.0 * 76.0 / 78.0 * 3.0 / 4.0
+        XCTAssertEqual(Double(parts[0].size ?? 0), expected, accuracy: expected * 0.01)
+        XCTAssertEqual(parts[1].size, 2_000)
+    }
+
+    func testRootHeadersAreRead() {
+        let info = MessageInfo(
+            sequenceNumber: SequenceNumber(1),
+            additionalFields: [
+                "content-type": "Multipart/Report; report-type=delivery-status",
+                "precedence": " Bulk ",
+                "auto-submitted": "auto-replied",
+            ]
+        )
+        let envelope = MailEnvelope(info)
+        XCTAssertEqual(envelope.contentType, "multipart/report; report-type=delivery-status")
+        XCTAssertEqual(envelope.precedence, "bulk")
+        XCTAssertEqual(envelope.autoSubmitted, "auto-replied")
     }
 
     // MARK: Mailboxes

@@ -15,7 +15,7 @@ import Foundation
 import ZirbeMail
 
 /// The outcome of one background poll, for the caller to act on. `.newMail`
-/// carries the arrivals to notify and the inbox's unread count for the app badge;
+/// carries the arrival candidates, which the notification rules may still drop, and the inbox's unread count for the app badge;
 /// `.upToDate` means the sync ran but found nothing new; `.failed` means it
 /// couldn't run (no account, no password, server unreachable).
 public enum BackgroundRefreshResult: Sendable {

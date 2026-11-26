@@ -23,11 +23,12 @@ extension Message {
             date: envelope.date,
             flags: Set(envelope.flags.map(Flag.init(imap:))),
             reaction: envelope.reaction,
-            media: MessageMedia(mimeTypes: envelope.partTypes),
+            media: MessageMedia(mimeTypes: envelope.parts.map(\.mimeType)),
             mailingList: envelope.listID.map {
                 MailingList(id: $0, name: envelope.listName ?? $0, post: envelope.listPost)
             },
-            unsubscribe: envelope.unsubscribe
+            unsubscribe: envelope.unsubscribe,
+            kinds: MessageKind.classify(MessageKind.facts(of: envelope))
         )
     }
 }

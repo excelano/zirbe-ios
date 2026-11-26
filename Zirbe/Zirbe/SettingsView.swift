@@ -16,11 +16,16 @@ enum SettingsKeys {
     /// Load remote images in Web View by default rather than blocking them.
     static let loadRemoteImages = "settings.loadRemoteImages"
     /// The senders and domains whose remote images load without asking, one per
-    /// line (see `ImageTrust`).
+    /// line (see `SenderList`).
     static let trustedImageSenders = "settings.trustedImageSenders"
     /// Post a banner when a background check finds new mail. Defaults on; the
     /// notifier reads the same key and treats an unset value as on.
     static let newMailNotifications = "settings.newMailNotifications"
+    /// Who may notify for one kind of message: a `NotifyWho` raw value, absent
+    /// meaning Everyone. The notifier reads the same keys.
+    static func notifyWho(_ kind: MessageKind) -> String { "settings.notifyWho.\(kind.rawValue)" }
+    /// The Favorites list, one sender or domain per line (see `SenderList`).
+    static let notifyFavorites = "settings.notifyFavorites"
     /// Seconds a sent reply waits with an Undo before it goes; 0 sends at once.
     static let undoSendSeconds = "settings.undoSendSeconds"
     /// How many lines of each message to preview in the inbox row (0 = none).
@@ -41,6 +46,8 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.loadRemoteImages) private var loadRemoteImages = false
     @AppStorage(SettingsKeys.trustedImageSenders) private var trustedImageSenders = ""
     @AppStorage(SettingsKeys.newMailNotifications) private var newMailNotifications = true
+    @AppStorage(SettingsKeys.notifyFavorites) private var notifyFavorites = ""
+    @State private var newFavorite = ""
     @AppStorage(SettingsKeys.previewLineCount) private var previewLineCount = 2
     @AppStorage(SettingsKeys.undoSendSeconds) private var undoSendSeconds = 0
     #if DEBUG
@@ -87,6 +94,43 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    ForEach(MessageKind.allCases, id: \.self) { kind in
+                        NotifyWhoPicker(kind: kind)
+                    }
+                } header: {
+                    Text("Notify Me About")
+                } footer: {
+                    Text("Each row chooses who may notify you for that kind of message: everyone, only your Favorites, or nobody. A conversation can override these from its menu.")
+                }
+                .disabled(!newMailNotifications)
+
+                Section {
+                    ForEach(SenderList.entries(notifyFavorites), id: \.self) { entry in
+                        Label(entry, systemImage: "star")
+                    }
+                    .onDelete { offsets in
+                        let entries = SenderList.entries(notifyFavorites)
+                        for index in offsets {
+                            notifyFavorites = SenderList.removing(entries[index], from: notifyFavorites)
+                        }
+                    }
+                    HStack {
+                        TextField("Address or domain", text: $newFavorite)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.emailAddress)
+                            .onSubmit(addFavorite)
+                        Button("Add", action: addFavorite)
+                            .disabled(newFavorite.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                } header: {
+                    Text("Favorites")
+                } footer: {
+                    Text("An address, or a domain to include everyone there. Swipe one to remove it.")
+                }
+                .disabled(!newMailNotifications)
+
+                Section {
                     Picker("Preview", selection: $previewLineCount) {
                         Text("None").tag(0)
                         Text("1 Line").tag(1)
@@ -114,13 +158,13 @@ struct SettingsView: View {
                     Toggle("Open HTML email in Web View", isOn: $openHTMLInWebView)
                     Toggle("Load remote images", isOn: $loadRemoteImages)
                     if !loadRemoteImages {
-                        ForEach(ImageTrust.entries(trustedImageSenders), id: \.self) { entry in
+                        ForEach(SenderList.entries(trustedImageSenders), id: \.self) { entry in
                             Label(entry, systemImage: "eye")
                         }
                         .onDelete { offsets in
-                            let entries = ImageTrust.entries(trustedImageSenders)
+                            let entries = SenderList.entries(trustedImageSenders)
                             for index in offsets {
-                                trustedImageSenders = ImageTrust.removing(entries[index], from: trustedImageSenders)
+                                trustedImageSenders = SenderList.removing(entries[index], from: trustedImageSenders)
                             }
                         }
                     }
@@ -164,6 +208,13 @@ struct SettingsView: View {
         }
     }
 
+    private func addFavorite() {
+        let trimmed = newFavorite.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        notifyFavorites = SenderList.adding(trimmed, to: notifyFavorites)
+        newFavorite = ""
+    }
+
     private func accountRow(_ model: InboxModel) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             AccountLabel(account: model.account)
@@ -177,6 +228,25 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
+        }
+    }
+}
+
+private struct NotifyWhoPicker: View {
+    let kind: MessageKind
+    @AppStorage private var stored: String
+
+    init(kind: MessageKind) {
+        self.kind = kind
+        _stored = AppStorage(wrappedValue: NotifyWho.everyone.rawValue, SettingsKeys.notifyWho(kind))
+    }
+
+    var body: some View {
+        Picker(kind.label, selection: Binding(
+            get: { NotifyWho(rawValue: stored) ?? .everyone },
+            set: { stored = $0.rawValue }
+        )) {
+            ForEach(NotifyWho.allCases, id: \.self) { Text($0.label).tag($0) }
         }
     }
 }

@@ -61,6 +61,69 @@ final class MailStoreTests: XCTestCase {
         XCTAssertFalse(summaries.contains { $0.isPinned })
     }
 
+    func testAlertIsSetAndCleared() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        try await store.save([msg(id: "<a@x>", subject: "Lunch", from: "p@x.com", minutes: 1)], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        let listed = try await store.threadSummaries(accountID: acct.id)
+        let id = try XCTUnwrap(listed.first?.id)
+
+        try await store.setAlert(.mute, threadID: id, accountID: acct.id)
+        var summaries = try await store.threadSummaries(accountID: acct.id)
+        XCTAssertEqual(summaries.first?.alert, .mute)
+
+        try await store.setAlert(.always, threadID: id, accountID: acct.id)
+        summaries = try await store.threadSummaries(accountID: acct.id)
+        XCTAssertEqual(summaries.first?.alert, .always)
+
+        try await store.setAlert(.default, threadID: id, accountID: acct.id)
+        summaries = try await store.threadSummaries(accountID: acct.id)
+        XCTAssertEqual(summaries.first?.alert, .default)
+    }
+
+    func testAlertFollowsARethread() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+
+        let a = msg(id: "<a@x>", subject: "Plan", from: "p@x.com", minutes: 1)
+        try await store.save([a], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        var summaries = try await store.threadSummaries(accountID: acct.id)
+        let originalID = try XCTUnwrap(summaries.first?.id)
+        try await store.setAlert(.mute, threadID: originalID, accountID: acct.id)
+
+        let b = msg(id: "<b@x>", references: ["<a0@x>", "<a@x>"], subject: "Re: Plan", from: "q@x.com", to: ["p@x.com"], minutes: 2)
+        try await store.save([b], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        summaries = try await store.threadSummaries(accountID: acct.id)
+        XCTAssertEqual(summaries.count, 1)
+        XCTAssertNotEqual(summaries.first?.id, originalID)
+        XCTAssertEqual(summaries.first?.alert, .mute)
+    }
+
+    func testAccountRemovalClearsAlerts() async throws {
+        let store = try MailStore()
+        let acct = account()
+        try await store.upsert(acct)
+        let a = msg(id: "<a@x>", subject: "Plan", from: "p@x.com", minutes: 1)
+        try await store.save([a], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        let listed = try await store.threadSummaries(accountID: acct.id)
+        let id = try XCTUnwrap(listed.first?.id)
+        try await store.setAlert(.mute, threadID: id, accountID: acct.id)
+
+        try await store.eraseAccount(acct.id)
+        try await store.upsert(acct)
+        try await store.save([a], accountID: acct.id, mailboxName: "INBOX")
+        try await store.rethread(accountID: acct.id)
+        let summaries = try await store.threadSummaries(accountID: acct.id)
+        XCTAssertEqual(summaries.first?.id, id)
+        XCTAssertEqual(summaries.first?.alert, .default)
+    }
+
     func testAPrivateReplyIsItsOwnConversationAndLeavesTheOriginalAlone() async throws {
         let store = try MailStore()
         let acct = account()
@@ -648,6 +711,19 @@ final class MailStoreTests: XCTestCase {
         let (store, acct) = try await searchStore()
         let hits = try await store.searchThreads(accountID: acct.id, query: "budget")
         XCTAssertEqual(hits.map(\.subject), ["Q3 Budget"])
+    }
+
+    func testSearchResultsCarryTheConversationsAlertAndPin() async throws {
+        let (store, acct) = try await searchStore()
+        let found = try await store.searchThreads(accountID: acct.id, query: "budget")
+        let id = try XCTUnwrap(found.first?.id)
+        try await store.setAlert(.mute, threadID: id, accountID: acct.id)
+        try await store.setPinned(true, threadID: id, accountID: acct.id)
+
+        let refound = try await store.searchThreads(accountID: acct.id, query: "budget")
+        let hit = try XCTUnwrap(refound.first)
+        XCTAssertEqual(hit.alert, .mute)
+        XCTAssertTrue(hit.isPinned)
     }
 
     func testSearchMatchesSenderNameAndAddress() async throws {

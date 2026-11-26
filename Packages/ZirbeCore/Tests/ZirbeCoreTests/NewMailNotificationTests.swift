@@ -22,6 +22,16 @@ final class NewMailNotificationTests: XCTestCase {
         ]))
     }
 
+    func testAReactionBannerSaysReactedInsteadOfQuotingTheSubject() {
+        let reaction = NewMailItem(
+            accountID: "me@x.com", threadID: "t1", senderName: "Pat Lee", senderAddress: "p@x.com",
+            subject: "Re: Lunch?", kinds: [.reactions], reaction: "\u{1F44D}"
+        )
+        XCTAssertEqual(NewMailNotification.plan(for: [reaction]), .items([
+            NewMailNotification.Pending(accountID: "me@x.com", threadID: "t1", title: "Pat Lee", body: "Reacted \u{1F44D}")
+        ]))
+    }
+
     func testAtCapIsPerMessage() {
         let items = [
             item(thread: "a", name: "A", subject: "1"),
@@ -57,5 +67,24 @@ final class NewMailNotificationTests: XCTestCase {
         XCTAssertEqual(plan, .items([
             NewMailNotification.Pending(accountID: "me@x.com", threadID: "t1", title: "Pat", body: "(no subject)")
         ]))
+    }
+
+    private func arrivals(_ count: Int, muted: Int) -> [NewMailItem] {
+        (0..<count).map { n in
+            NewMailItem(accountID: "me@x.com", threadID: "t\(n)", senderName: "S\(n)", senderAddress: "p@x.com",
+                        subject: "s\(n)", alert: n < muted ? .mute : .default)
+        }
+    }
+
+    func testSummaryCountsOnlyMessagesThatPass() {
+        guard case let .items(banners) = NewMailNotification.plan(for: arrivals(5, muted: 2), rules: NotificationRules()) else {
+            return XCTFail("expected per-message banners for the three that pass")
+        }
+        XCTAssertEqual(banners.count, 3)
+        XCTAssertEqual(NewMailNotification.plan(for: arrivals(6, muted: 1), rules: NotificationRules()), .summary(count: 5))
+    }
+
+    func testNothingPassingPlansNone() {
+        XCTAssertEqual(NewMailNotification.plan(for: arrivals(3, muted: 3), rules: NotificationRules()), .none)
     }
 }

@@ -26,12 +26,43 @@ extension MailEnvelope {
             // Custom header keys arrive lowercased from the parser, so the
             // reaction marker is read by the lowercased name.
             reaction: info.additionalFields?[MailHeader.zirbeReaction.lowercased()],
-            partTypes: info.parts.map(\.contentType),
+            parts: info.parts.map(EnvelopePart.init),
+            contentType: Self.headerValue(info.additionalFields?["content-type"]),
+            precedence: Self.headerValue(info.additionalFields?["precedence"]),
+            autoSubmitted: Self.headerValue(info.additionalFields?["auto-submitted"]),
             listID: Self.listIdentity(info.additionalFields?["list-id"])?.id,
             listName: Self.listIdentity(info.additionalFields?["list-id"])?.name,
             listPost: Self.listPostAddress(info.additionalFields?["list-post"]),
             unsubscribe: Self.bracketedLinks(info.additionalFields?["list-unsubscribe"])
         )
+    }
+}
+
+extension MailEnvelope {
+    static func headerValue(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+extension EnvelopePart {
+    init(_ part: MessagePart) {
+        let base = part.contentType.split(separator: ";", maxSplits: 1).first ?? ""
+        self.init(
+            mimeType: base.trimmingCharacters(in: .whitespaces).lowercased(),
+            filename: part.filename,
+            disposition: part.disposition?.lowercased(),
+            contentID: part.contentId,
+            size: part.size.map { Self.decodedSize($0, encoding: part.encoding) }
+        )
+    }
+
+    /// A base64 part's body-structure size counts encoded octets, 78 per line
+    /// including its CRLF; the decoded size is three quarters of the characters.
+    static func decodedSize(_ size: Int, encoding: String?) -> Int {
+        guard encoding?.lowercased() == "base64" else { return size }
+        return (size - size / 78 * 2) * 3 / 4
     }
 }
 

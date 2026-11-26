@@ -77,6 +77,9 @@ struct ConversationView: View {
     /// The flagged state shown in the top bar. Seeded from the inbox summary for
     /// an instant read, refined once the thread loads, and toggled optimistically.
     @State private var isFlagged = false
+    /// The conversation's notification override, seeded from the summary like `isFlagged`.
+    @State private var alert = ConversationAlert.default
+    @AppStorage(SettingsKeys.notifyFavorites) private var notifyFavorites = ""
     @State private var isLoading = true
     @State private var isFetchingBodies = false
     /// Whether the find-in-conversation panel is up. The panel overlays the
@@ -182,6 +185,19 @@ struct ConversationView: View {
                 onFind: { activeWeb = nil; isSearching = true },
                 blockSenderLabel: blockableSender?.label,
                 onBlock: { pendingBlock = blockableSender },
+                alert: alert,
+                onSetAlert: { newAlert in
+                    alert = newAlert
+                    Task { await model.setAlert(threadID: summary.id, alert: newAlert) }
+                },
+                notifyLabel: blockableSender?.label,
+                notifiesAboutSender: blockableSender.map { SenderList.listed($0.address, in: notifyFavorites) } ?? false,
+                onToggleNotifyAboutSender: {
+                    guard let address = blockableSender?.address else { return }
+                    notifyFavorites = SenderList.listed(address, in: notifyFavorites)
+                        ? SenderList.removing(address, from: notifyFavorites)
+                        : SenderList.adding(address, to: notifyFavorites)
+                },
                 onUnsubscribe: unsubscribeRequest.map { request in { pendingUnsubscribe = request } }
             )
             Divider()
@@ -319,6 +335,7 @@ struct ConversationView: View {
                 await commitReaction(emoji, to: messageID)
             }
             isFlagged = summary.isFlagged
+            alert = summary.alert
             let cached = await model.cachedConversation(id: summary.id)
             // With the HTML-in-Web-View preference on, the conversation opens
             // straight into the web view, so the bubbles wait for it rather than flash.
@@ -381,7 +398,7 @@ struct ConversationView: View {
             activeWeb = ActiveWeb(
                 messageID: latest.id,
                 body: body,
-                showImages: loadRemoteImages || ImageTrust.trusts(trustedImageSenders, sender: latest.from?.address)
+                showImages: loadRemoteImages || SenderList.contains(trustedImageSenders, sender: latest.from?.address)
             )
         }
     }
@@ -567,7 +584,7 @@ struct ConversationView: View {
                 ) {
                     activeWeb?.showImages.toggle()
                 }
-                if !loadRemoteImages, let sender = webSender(active), !ImageTrust.trusts(trustedImageSenders, sender: sender) {
+                if !loadRemoteImages, let sender = webSender(active), !SenderList.contains(trustedImageSenders, sender: sender) {
                     Divider().frame(height: 18)
                     Menu {
                         Button("From \(sender)") { trust(sender) }
@@ -646,7 +663,7 @@ struct ConversationView: View {
 
     /// Trust a sender or a domain's images from now on, and show them here.
     private func trust(_ entry: String) {
-        trustedImageSenders = ImageTrust.adding(entry, to: trustedImageSenders)
+        trustedImageSenders = SenderList.adding(entry, to: trustedImageSenders)
         activeWeb?.showImages = true
     }
 
@@ -834,6 +851,11 @@ private struct ConversationTopBar: View {
     /// note-to-self thread has no one to block).
     let blockSenderLabel: String?
     let onBlock: () -> Void
+    let alert: ConversationAlert
+    let onSetAlert: (ConversationAlert) -> Void
+    let notifyLabel: String?
+    let notifiesAboutSender: Bool
+    let onToggleNotifyAboutSender: () -> Void
     let onUnsubscribe: (() -> Void)?
 
     @State private var isTruncated = false
@@ -899,6 +921,21 @@ private struct ConversationTopBar: View {
                 }
                 Button(role: .destructive, action: onJunk) {
                     Label("Move to Junk", systemImage: "xmark.bin")
+                }
+                Menu {
+                    Picker("Notifications", selection: Binding(get: { alert }, set: onSetAlert)) {
+                        ForEach(ConversationAlert.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                } label: {
+                    Label("Notifications", systemImage: alert == .mute ? "bell.slash" : "bell")
+                }
+                if let notifyLabel {
+                    Button(action: onToggleNotifyAboutSender) {
+                        Label(
+                            notifiesAboutSender ? "Stop Notifying Me About \(notifyLabel)" : "Notify Me About \(notifyLabel)",
+                            systemImage: notifiesAboutSender ? "star.slash" : "star"
+                        )
+                    }
                 }
                 if let onUnsubscribe {
                     Button(action: onUnsubscribe) {
@@ -1378,7 +1415,7 @@ private struct MessageBubble: View {
     /// Whether this message's Web View loads remote images without asking: all
     /// mail when the setting is on, else a trusted sender's or domain's.
     private var imagesByDefault: Bool {
-        loadRemoteImages || ImageTrust.trusts(trustedImageSenders, sender: message.from?.address)
+        loadRemoteImages || SenderList.contains(trustedImageSenders, sender: message.from?.address)
     }
 
     /// The sender avatar's diameter and the gap to the bubble. The leading inset

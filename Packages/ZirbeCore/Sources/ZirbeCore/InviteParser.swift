@@ -104,6 +104,22 @@ public enum InviteParser {
         )
     }
 
+    /// The calendar's own `METHOD`, uppercased; nil when it has none.
+    public static func method(iCalendar text: String) -> String? {
+        var depth: [String] = []
+        for line in unfold(text) {
+            guard let parsed = ContentLine(line) else { continue }
+            switch parsed.name {
+            case "BEGIN": depth.append(parsed.value.uppercased())
+            case "END": if !depth.isEmpty { depth.removeLast() }
+            case "METHOD" where depth == ["VCALENDAR"]:
+                return parsed.value.trimmingCharacters(in: .whitespaces).uppercased()
+            default: break
+            }
+        }
+        return nil
+    }
+
     // MARK: Lines
 
     /// One content line: `NAME;PARAM=VALUE;PARAM="quoted":value`.

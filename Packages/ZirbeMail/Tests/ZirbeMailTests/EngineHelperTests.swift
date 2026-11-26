@@ -103,6 +103,43 @@ final class EngineHelperTests: XCTestCase {
         XCTAssertNil(MailEngine.reactionPart(in: [part("text/html", disposition: "reaction")]))
     }
 
+    private func info(_ parts: [MessagePart], replying: Bool = false, seen: Bool = false) -> MessageInfo {
+        MessageInfo(
+            sequenceNumber: SequenceNumber(1),
+            inReplyTo: replying ? MessageID(localPart: "a", domain: "b") : nil,
+            flags: seen ? [.seen] : [],
+            parts: parts
+        )
+    }
+
+    func testReactionPartsAreSelectedForRepliesWithNoReactionYet() {
+        let reaction = part("text/plain", disposition: "reaction")
+        let calendar = part("text/calendar", section: "2")
+
+        let reply = info([reaction], replying: true)
+        XCTAssertEqual(MailEngine.reactionParts(in: reply, reaction: nil).map(\.section), [reaction.section])
+        XCTAssertTrue(MailEngine.reactionParts(in: reply, reaction: "\u{1F44D}").isEmpty)
+        XCTAssertTrue(MailEngine.reactionParts(in: info([reaction]), reaction: nil).isEmpty)
+        XCTAssertTrue(MailEngine.reactionParts(in: info([part("text/plain"), calendar], replying: true), reaction: nil).isEmpty)
+    }
+
+    func testCalendarPartsAreSelectedOnlyForUnseenMessagesAndSmallParts() {
+        func calendar(size: Int?) -> MessagePart {
+            MessagePart(sectionString: "2", contentType: "text/calendar; charset=utf-8; method=REQUEST", size: size)
+        }
+        func unseenSections(size: Int?) -> [String] {
+            MailEngine.calendarParts(in: info([part("text/plain"), calendar(size: size)])).map(\.section.description)
+        }
+
+        XCTAssertEqual(unseenSections(size: nil), ["2"])
+        XCTAssertEqual(unseenSections(size: 1_000), ["2"])
+        XCTAssertEqual(unseenSections(size: 262_144), ["2"])
+        XCTAssertTrue(unseenSections(size: 262_145).isEmpty)
+        XCTAssertTrue(MailEngine.calendarParts(in: info([calendar(size: 1_000)], seen: true)).isEmpty)
+        XCTAssertTrue(MailEngine.calendarParts(in: info([part("text/plain")])).isEmpty)
+        XCTAssertTrue(MailEngine.calendarParts(in: info([part("text/calendarx", section: "2")])).isEmpty)
+    }
+
     func testAGmailReactionPartIsFoundAnywhere() {
         let gmail = part("text/vnd.google.email-reaction+json", section: "3")
         XCTAssertEqual(MailEngine.reactionPart(in: [part("text/plain"), part("text/html", section: "2"), gmail])?.section, gmail.section)

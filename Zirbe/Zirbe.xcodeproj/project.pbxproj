@@ -116,6 +116,7 @@
 			packageReferences = (
 				6BD51CE52FD7C5660091C368 /* XCLocalSwiftPackageReference "../Packages/ZirbeCore" */,
 				6BD51CF02FD7C5660091C368 /* XCRemoteSwiftPackageReference "klartext" */,
+				6BD51CF92FD7C5660091C368 /* XCRemoteSwiftPackageReference "swift-nio-imap" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6BD51CD82FD7C4D60091C368 /* Products */;
@@ -372,6 +373,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.7.0;
+			};
+		};
+		6BD51CF92FD7C5660091C368 /* XCRemoteSwiftPackageReference "swift-nio-imap" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-nio-imap";
+			requirement = {
+				kind = exactVersion;
+				version = 0.3.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
