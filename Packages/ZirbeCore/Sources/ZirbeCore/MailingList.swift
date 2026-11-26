@@ -5,7 +5,7 @@ import Foundation
 
 /// The mailing list a message came through, from its `List-Id` (RFC 2919) and
 /// `List-Post` (RFC 2369) headers. Every message of one list forms a single
-/// conversation, named for the list (see CONVERSATIONS.md).
+/// conversation, named for the list (see zirbe-desktop's CONVERSATIONS.md).
 public struct MailingList: Sendable, Hashable, Codable {
     /// The list's identifier, lowercased, such as `hiking.lists.example.org`.
     public var id: String

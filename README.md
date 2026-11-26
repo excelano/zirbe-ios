@@ -2,8 +2,9 @@
 
 An open-source email client for iPhone and iPad that looks and feels like a
 texting app, while keeping real email underneath. Standards-only, no backend,
-free. On iPad the conversation list sits beside the open conversation. Its Linux
-desktop port is [zirbe-desktop](https://github.com/excelano/zirbe-desktop).
+free. On iPad the conversation list sits beside the open conversation. It follows
+[zirbe-desktop](https://github.com/excelano/zirbe-desktop), the Linux desktop
+app, which is the primary Zirbe app.
 
 https://excelano.com/zirbe/ is the product page for every platform.
 
@@ -19,7 +20,7 @@ coined word and rewards anyone who looks it up.
 A conversation in Zirbe is an email **thread**, not a person, shown like a
 named group chat: the **subject is the title**, the people on the thread are
 the members, and each message is one bubble in time order.
-[CONVERSATIONS.md](CONVERSATIONS.md) defines how messages are grouped, when a
+[CONVERSATIONS.md](https://github.com/excelano/zirbe-desktop/blob/main/CONVERSATIONS.md) defines how messages are grouped, when a
 private reply starts a conversation of its own, and how reactions travel.
 Starting a new conversation requires naming it, and that name is the subject.
 
