@@ -1,8 +1,8 @@
 # Zirbe
 
 An open-source email client for iPhone and iPad that looks and feels like a
-texting app, while keeping real email underneath. Standards-only, no backend,
-free. On iPad the conversation list sits beside the open conversation. It follows
+texting app, while keeping real email underneath. Standards-only, no backend.
+On iPad the conversation list sits beside the open conversation. It follows
 [zirbe-desktop](https://github.com/excelano/zirbe-desktop), the Linux desktop
 app, which is the primary Zirbe app.
 
