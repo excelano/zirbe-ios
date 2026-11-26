@@ -94,3 +94,59 @@ marked `Content-Disposition: reaction`, either its whole body or the first part
 of a multipart body. It shows the reaction as a badge on the message named by
 `In-Reply-To` rather than as a bubble. A newer reaction from the same person to
 the same message replaces the earlier one, and an empty one withdraws it.
+
+## Notifications
+
+Every new message arrives, syncs and counts as unread the same way; these
+rules decide only whether it posts a notification. Mail the user sent, mail
+already read, a reaction that withdraws an earlier one and mail outside the
+inbox never notify, and the rules below apply to the rest.
+
+A message has one or more kinds, read from its headers and MIME structure when
+it is stored, never from a body fetched for the purpose.
+
+| Kind | A message has it when |
+|---|---|
+| Plain text | It has a body and no HTML part. |
+| Formatted text | It has a body with an HTML part. |
+| Pictures | It carries an image attachment. |
+| Audio | It carries an audio attachment. |
+| Video | It carries a video attachment. |
+| Other attachments | It carries an attachment that is none of the three above. |
+| Invitations | It carries a calendar part whose method is any other than `REPLY` or `COUNTER`, or cannot be read, or it carries a calendar file (`application/ics`, or a name ending `.ics`) and no calendar part. |
+| Invitation replies | It carries a calendar part whose method is `REPLY` or `COUNTER`. |
+| Reactions | It is a reaction, as defined above. |
+| Newsletters and lists | It has `List-Id`, `List-Unsubscribe`, or `Precedence: bulk` or `list`. |
+| Automatic notices | It is a delivery report (`multipart/report`), a read receipt (`message/disposition-notification`), or has `Auto-Submitted` other than `no`. |
+| Anything else | None of the above applies. |
+
+Kinds combine, so a text with a voice clip is Plain text and Audio, with these
+exceptions. A newsletter, a reaction, an invitation and an invitation reply are
+not also Plain or Formatted text. An automatic notice is only Automatic notices, and an
+encrypted message (PGP/MIME, or S/MIME `smime.p7m` that is not only signed) is
+only Anything else. Attachments are recognized by their MIME type or their file
+name's extension.
+Signature parts (`signature.asc`, `smime.p7s`), encryption parts, the calendar
+part of an invitation and the `.ics` copy of it that some senders attach beside
+it, and images under 100 KB that carry a `Content-ID` and are not marked as an
+attachment are not attachments for this purpose, since they come with ordinary
+mail. Every message has at least one kind, because Anything else catches what
+the others do not.
+
+For each kind the user chooses who may notify: Everyone, Favorites or Nobody.
+Favorites is one list of addresses and domains. An address matches itself,
+ignoring case, and a domain matches itself and its subdomains; an entry typed
+with a leading `@` is a domain. Each
+conversation is set to Default, Always notify or Mute.
+
+For one arriving message, the decision runs in this order. If new mail
+notifications are off, it does not notify. If its conversation is set to Mute,
+it does not notify, and if set to Always notify, it does. Otherwise it notifies
+when any of its kinds allows its sender, where Everyone allows every sender,
+Favorites allows a sender on the Favorites list, and Nobody allows none.
+
+Every kind starts at Everyone, Favorites starts empty, and every conversation
+starts at Default, so out of the box every message notifies. When several
+messages arrive together and they are summarized as one notification, the
+count is of the messages that passed. The unread counts and the app's badge
+count every unread message.
