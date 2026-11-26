@@ -2,21 +2,21 @@
 # against the release being cut, so notes left from last time stop the release
 # rather than reaching the listing.
 
-version = "1.7.12"
+version = "1.7.13"
 
 [locales."en-us"]
 whats-new = """
-Tapping a link in a message's web view now checks it first. If the link's \
-text names a different site, the address is a bare number, or the site's \
-name uses look-alike letters, Zirbe shows where it really goes before \
-opening it, and can open it without tracking. Tracking pixels stay blocked \
-after you choose Show Images.
+Choose what notifies you. Settings has a new Notify Me About section with \
+one choice per kind of message (plain text, formatted text, pictures, \
+audio, video, other attachments, invitations, invitation replies, \
+reactions, newsletters and lists, automatic notices and anything else): \
+Everyone, Favorites or Nobody. Add the people \
+you care about to Favorites in Settings or from a conversation's menu.
 
-On Gmail and Outlook, a sent message now appears once in Sent, not twice, \
-and other mail apps show the messages you replied to as answered.
-
-A reply that fails to send says why under its bubble, and errors read as \
-plain sentences. Opening a folder on another account works on the first tap.
+Any conversation can be set to Always Notify or muted, from its menu or by \
+pressing it in the conversation list. Muted conversations show a bell with \
+a line through it. Everything still notifies until you change it, and \
+reactions now notify too, as "Reacted" with the emoji.
 
 As always, Zirbe talks only to your own mail servers and, when you sign in \
 with Microsoft, Microsoft's sign-in service. No backend, no analytics, no \
